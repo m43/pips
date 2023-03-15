@@ -1,24 +1,26 @@
-import time
-import numpy as np
-import io
-import os
-from PIL import Image
-import cv2
-import saverloader
-import imageio.v2 as imageio
-from nets.pips import Pips
-import utils.improc
-import random
+import argparse
 import glob
-from utils.basic import print_, print_stats
+import os
+import random
+import time
+
+import imageio.v2 as imageio
+import numpy as np
 import torch
-from tensorboardX import SummaryWriter
 import torch.nn.functional as F
+from PIL import Image
+from tensorboardX import SummaryWriter
+
+import saverloader
+import utils.improc
+from nets.pips import Pips
+from utils.basic import print_, print_stats
+from utils.util import ensure_dir
 
 random.seed(125)
 np.random.seed(125)
 
-def run_model(model, rgbs, N, sw):
+def run_model(model, rgbs, N, sw, output_gifs_path):
     rgbs = rgbs.cuda().float() # B, S, C, H, W
 
     B, S, C, H, W = rgbs.shape
@@ -40,11 +42,11 @@ def run_model(model, rgbs, N, sw):
     preds, preds_anim, vis_e, stats = model(xy, rgbs, iters=6)
     trajs_e = preds[-1]
     print_stats('trajs_e', trajs_e)
-    
+
     pad = 50
     rgbs = F.pad(rgbs.reshape(B*S, 3, H, W), (pad, pad, pad, pad), 'constant', 0).reshape(B, S, 3, H+pad*2, W+pad*2)
     trajs_e = trajs_e + pad
-    
+
     if sw is not None and sw.save_this:
         linewidth = 2
 
@@ -54,21 +56,20 @@ def run_model(model, rgbs, N, sw):
         o2 = sw.summ_traj2ds_on_rgbs('outputs/trajs_on_rgbs', trajs_e[0:1], utils.improc.preprocess_color(rgbs[0:1]), cmap='spring', linewidth=linewidth)
         # visualize the trajs alone
         o3 = sw.summ_traj2ds_on_rgbs('outputs/trajs_on_black', trajs_e[0:1], torch.ones_like(rgbs[0:1])*-0.5, cmap='spring', linewidth=linewidth)
+        # alternate vis
+        o4 = sw.summ_traj2ds_on_rgbs2('outputs/trajs_on_rgbs2', trajs_e[0:1], vis_e[0:1], utils.improc.preprocess_color(rgbs[0:1]))
         # concat these for a synced wide vis
-        wide_cat = torch.cat([o1, o2, o3], dim=-1)
+        wide_cat = torch.cat([o1, o2, o4, o3], dim=-1)
         sw.summ_rgbs('outputs/wide_cat', wide_cat.unbind(1))
 
         # write to disk, in case that's more convenient
         wide_list = list(wide_cat.unbind(1))
         wide_list = [wide[0].permute(1,2,0).cpu().numpy() for wide in wide_list]
         wide_list = [Image.fromarray(wide) for wide in wide_list]
-        out_fn = './out_%d.gif' % sw.global_step
+        out_fn = os.path.join(output_gifs_path, f'./S{S}_H{H}_W{W}__step-{sw.global_step:03d}.gif')
         wide_list[0].save(out_fn, save_all=True, append_images=wide_list[1:])
         print('saved %s' % out_fn)
 
-        # alternate vis
-        sw.summ_traj2ds_on_rgbs2('outputs/trajs_on_rgbs2', trajs_e[0:1], vis_e[0:1], utils.improc.preprocess_color(rgbs[0:1]))
-        
         # animation of inference iterations
         rgb_vis = []
         for trajs_e_ in preds_anim:
@@ -77,11 +78,11 @@ def run_model(model, rgbs, N, sw):
         sw.summ_rgbs('outputs/animated_trajs_on_rgb', rgb_vis)
 
     return trajs_e-pad
-    
-def main():
+
+def main(input_images_path, output_gifs_path):
 
     # the idea in this file is to run the model on some demo images, and return some visualizations
-    
+
     exp_name = '00' # (exp_name is used for logging notes that correspond to different runs)
 
     init_dir = 'reference_model'
@@ -91,13 +92,14 @@ def main():
     S = 8
     N = 16**2 # number of points to track
 
-    filenames = glob.glob('./demo_images/*.jpg')
+    filenames = glob.glob(os.path.join(input_images_path, '*.jpg'))
     filenames = sorted(filenames)
     print('filenames', filenames)
     max_iters = len(filenames)//S # run each unique subsequence
+    assert len(filenames) > 0, "No images found"
 
-    log_freq = 2 # when to produce visualizations 
-    
+    log_freq = 2 # when to produce visualizations
+
     ## autogen a name
     model_name = "%02d_%d_%d" % (B, S, N)
     model_name += "_%s" % exp_name
@@ -105,7 +107,9 @@ def main():
     model_date = datetime.datetime.now().strftime('%H:%M:%S')
     model_name = model_name + '_' + model_date
     print('model_name', model_name)
-    
+
+    ensure_dir(output_gifs_path)
+
     log_dir = 'logs_demo'
     writer_t = SummaryWriter(log_dir + '/' + model_name + '/t', max_queue=10, flush_secs=60)
 
@@ -117,11 +121,11 @@ def main():
         _ = saverloader.load(init_dir, model)
     global_step = 0
     model.eval()
-    
+
     while global_step < max_iters:
-        
+
         read_start_time = time.time()
-        
+
         global_step += 1
 
         sw_t = utils.improc.Summ_writer(
@@ -147,15 +151,21 @@ def main():
             iter_start_time = time.time()
 
             with torch.no_grad():
-                trajs_e = run_model(model, rgbs, N, sw_t)
+                trajs_e = run_model(model, rgbs, N, sw_t, output_gifs_path)
 
             iter_time = time.time()-iter_start_time
             print('%s; step %06d/%d; rtime %.2f; itime %.2f' % (
                 model_name, global_step, max_iters, read_time, iter_time))
         except FileNotFoundError as e:
             print('error', e)
-            
+
     writer_t.close()
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input_images_path", type=str, default="demo_images/black_french_bulldog",
+                        help="path to folder with input images")
+    parser.add_argument("--output_gifs_path", type=str, default="demo_output/black_french_bulldog",
+                        help="path to folder to save gifs to")
+    args = parser.parse_args()
+    main(args.input_images_path, args.output_gifs_path)
