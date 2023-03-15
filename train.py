@@ -157,7 +157,7 @@ def main(
         # crop_size=(256,384), # the raw data is 540,960
         use_augs=True, # resizing/jittering/color/blur augs
         # dataset
-        dataset_location='/data/flyingthings',
+        dataset_location='data/flyingthings',
         subset='all', # dataset subset
         shuffle=True, # dataset shuffling
         # optimization

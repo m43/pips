@@ -233,7 +233,7 @@ def main(
         req_occlusion=True,
         stride=4,
         log_dir='logs_test_on_crohd',
-        dataset_location='/data/head_tracking',
+        dataset_location='data/head_tracking',
         max_iters=0, # auto-select based on dataset
         log_freq=100,
         shuffle=False,

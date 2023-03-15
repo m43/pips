@@ -74,7 +74,7 @@ def readImage(name):
 
 class FlyingThingsDataset(torch.utils.data.Dataset):
     def __init__(self,
-                 dataset_location='../flyingthings',
+                 dataset_location='data/flyingthings',
                  dset='TRAIN',
                  subset='all',
                  use_augs=False,

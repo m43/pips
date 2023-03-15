@@ -156,7 +156,7 @@ if __name__ == '__main__':
 
     init_dir = 'reference_model'
     
-    data_path = '../badja_data/DAVIS'
+    data_path = 'data/DAVIS'
 
     stride = 8
     model = Pips(stride=stride).cuda()

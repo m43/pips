@@ -20,7 +20,7 @@ import scipy.spatial
 from filter_trajs import filter_trajs
 from tensorboardX import SummaryWriter
 
-flt3d_path = "../flyingthings"
+flt3d_path = "data/flyingthings"
 dsets = ["TRAIN", "TEST"]
 subsets = ["A", "B", "C"]
 

@@ -192,7 +192,7 @@ def main(
         init_dir='reference_model',
         stride=4,
         log_dir='logs_test_on_flt',
-        dataset_location='/data/flyingthings',
+        dataset_location='data/flyingthings',
         max_iters=0, # auto-select based on dataset
         log_freq=100,
         shuffle=False,

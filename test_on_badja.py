@@ -545,7 +545,7 @@ def main(
         modeltype='pips',
         init_dir='reference_model',
         log_dir='logs_test_on_badja',
-        data_dir='/data/badja_data',
+        data_dir='data/badja_data',
         stride=4,
         max_iters=7,
         log_freq=99, # vis is very slow here
