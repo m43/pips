@@ -199,7 +199,13 @@ def main(
         subset='all',
         crop_size=(384,512), # the raw data is 540,960
         use_augs=False,
+        seed=72,
 ):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
     # the idea in this file is to evaluate on flyingthings++
 
     assert(modeltype=='pips' or modeltype=='raft' or modeltype=='dino')
