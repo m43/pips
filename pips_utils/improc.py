@@ -313,7 +313,7 @@ def draw_frame_id_on_vis(vis, frame_id, scale=0.5, left=5, top=20):
     vis = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0)
     return vis
 
-COLORMAP_FILE = "./utils/bremm.png"
+COLORMAP_FILE = "./pips_utils/bremm.png"
 class ColorMap2d:
     def __init__(self, filename=None):
         self._colormap_file = filename or COLORMAP_FILE
