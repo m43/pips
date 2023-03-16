@@ -24,8 +24,8 @@ python chain_demo.py
 ## Run on Your Own Video
 
 Prepare a video of your own. For example, I will process the video I
-have downloaded
-from [this youtube video](https://www.youtube.com/watch?v=gqHy_trMnRk&ab_channel=cro3x3)
+have downloaded from [this youtube
+video](https://www.youtube.com/watch?v=gqHy_trMnRk&ab_channel=cro3x3)
 and put it into `demo_images/ulaz_u_crnu_riku.mp4`:
 
 ```bash
@@ -92,9 +92,9 @@ python chain_demo.py \
 
 ## Prepare Data
 
-I will download the necessary data into `./data`, that I soft linked
-to a data folder
-using `ln -s /scratch/izar/rajic/eth-master-thesis/00-data data`.
+I will download the necessary data into `./data`, which I soft linked to
+a data folder using `ln -s /scratch/izar/rajic/eth-master-thesis/00-data
+data`.
 
 ### 0. Set up a torrent client
 
@@ -323,12 +323,12 @@ tree -L 3 data
 
 To make sure the data is downloaded and located correctly, you can run
 the following evaluation commands, one for each dataset. The evaluation
-script will run use the checkpoint saved in `reference_model` by default
+script will use the checkpoint saved in `reference_model` by default
 (e.g., the `reference_model/model-000200000.pth`). Using the provided
 checkpoint should give numbers close to those provided in the
 `README.md`. However, the numbers should not match those in the paper,
-since the checkpoint was improved since the paper publication (by using
-a harder version of FlyingThings++ to train on).
+since the checkpoint was improved since the paper's publication (by
+using a harder version of FlyingThings++ to train on).
 
 ```bash
 cd path/to/pips/project
@@ -393,12 +393,11 @@ python test_on_badja.py
 
 ## Train
 
-To reproduce the result in the paper, you should train with 4 gpus,
-with horizontal and vertical flips, with a command like this:
+I will train on 2 GPUs, a batch size of 2 instead of 4, and 128
+points/trajectories instead of 768:
 
 ```bash
-#python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1]
-python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1,2,3]
+python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128
 ```
 
 ## Reproduce Paper Numbers
@@ -426,9 +425,63 @@ checkpoint and run:
 
 ### Evaluating Baselines
 
-TODO: RAFT
+Evaluating the baselines will exactly reproduce the numbers reported in
+the paper for BADJA (table 4), but not for CroHD or FlyingThings++.
 
-TODO: DINO
+Evaluate DINO, the checkpoint will be downloaded automatically:
+```bash
+python test_on_flt.py   --modeltype='dino'
+
+python test_on_crohd.py --modeltype='dino'
+
+python test_on_davis.py --modeltype='dino'
+
+python test_on_badja.py --modeltype='dino'
+# 1_8_dino_badja_23:05:16; step 000001/7; rtime 7.42; itime 8.50; bear; pck 75.0
+# 1_8_dino_badja_23:05:16; step 000002/7; rtime 2.34; itime 7.02; camel; pck 59.2
+# 1_8_dino_badja_23:05:16; step 000003/7; rtime 6.04; itime 8.07; cows; pck 70.6
+# 1_8_dino_badja_23:05:16; step 000004/7; rtime 0.11; itime 1.58; dog-agility; pck 10.3
+# 1_8_dino_badja_23:05:16; step 000005/7; rtime 0.03; itime 4.28; dog; pck 47.1
+# 1_8_dino_badja_23:05:16; step 000006/7; rtime 1.01; itime 4.07; horsejump-high; pck 35.1
+# 1_8_dino_badja_23:05:16; step 000007/7; rtime 3.30; itime 4.72; horsejump-low; pck 56.0
+# results ['75.0', '59.2', '70.6', '10.3', '47.1', '35.1', '56.0', 'avg 50.5']
+```
+
+Evaluate RAFT, but first download a checkpoint from their
+[GitHub](https://github.com/princeton-vl/RAFT):
+```bash
+wget https://www.dropbox.com/s/4j4z58wuv8o0mfz/models.zip
+unzip models.zip
+rm models.zip
+mv models raft_ckpts
+lss raft_ckpts
+# total 85M
+# -rw-r--r--   21M   Jul 25 2020   raft-chairs.pth
+# -rw-r--r--   21M   Jul 25 2020   raft-kitti.pth
+# -rw-r--r--   21M   Jul 25 2020   raft-sintel.pth
+# -rw-rw-r--  3.9M   Aug 24 2020   raft-small.pth
+# -rw-r--r--   21M   Jul 25 2020   raft-things.pth
+
+python test_on_flt.py   --modeltype='raft'
+
+python test_on_crohd.py --modeltype='raft'
+# 1_8_16_raft_occ_crohd_23:31:16; step 000234/237; rtime 0.07; itime 2.45; ate = 3.82; ate_pooled = 13.12
+# 1_8_16_raft_occ_crohd_23:31:16; step 000235/237; rtime 0.07; itime 2.41; ate = 33.87; ate_pooled = 13.21
+# 1_8_16_raft_occ_crohd_23:31:16; step 000236/237; rtime 0.13; itime 2.40; ate = 4.56; ate_pooled = 13.17
+# 1_8_16_raft_occ_crohd_23:31:16; step 000237/237; rtime 0.07; itime 2.36; ate = 9.16; ate_pooled = 13.16
+
+python test_on_davis.py --modeltype='raft'
+
+python test_on_badja.py --modeltype='raft'
+# 1_8_raft_badja_23:29:59; step 000001/7; rtime 5.83; itime 16.02; bear; pck 64.6
+# 1_8_raft_badja_23:29:59; step 000002/7; rtime 0.09; itime 12.92; camel; pck 65.6
+# 1_8_raft_badja_23:29:59; step 000003/7; rtime 0.09; itime 17.82; cows; pck 69.5
+# 1_8_raft_badja_23:29:59; step 000004/7; rtime 0.11; itime 3.01; dog-agility; pck 13.8
+# 1_8_raft_badja_23:29:59; step 000005/7; rtime 0.02; itime 7.85; dog; pck 39.1
+# 1_8_raft_badja_23:29:59; step 000006/7; rtime 0.06; itime 10.19; horsejump-high; pck 37.1
+# 1_8_raft_badja_23:29:59; step 000007/7; rtime 0.07; itime 10.16; horsejump-low; pck 29.3
+# results ['64.6', '65.6', '69.5', '13.8', '39.1', '37.1', '29.3', 'avg 45.6']
+```
 
 ## Plot Precision Plots
 

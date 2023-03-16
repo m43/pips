@@ -166,11 +166,11 @@ def main(
         max_iters=200000,
         use_scheduler=True,
         # summaries
-        log_dir='/data/my_pips/logs_train',
+        log_dir='logs/my_pips/logs_train',
         log_freq=4000,
         val_freq=2000,
         # saving/loading
-        ckpt_dir='/data/my_pips/checkpoints',
+        ckpt_dir='logs/my_pips/checkpoints',
         save_freq=1000,
         keep_latest=1,
         init_dir='',

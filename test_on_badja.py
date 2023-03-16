@@ -582,7 +582,7 @@ def main(
         _ = saverloader.load(init_dir, model)
         model.eval()
     elif modeltype=='raft':
-        model = Raftnet(ckpt_name='../RAFT/models/raft-things.pth').cuda()
+        model = Raftnet(ckpt_name='raft_ckpts/raft-things.pth').cuda()
         model.eval()
     elif modeltype=='dino':
         patch_size = 8
