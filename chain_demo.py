@@ -9,12 +9,12 @@ import cv2
 import saverloader
 import imageio.v2 as imageio
 from nets.pips import Pips
-import utils.improc
+import pips_utils.improc
 import random
 import glob
 
-from utils.util import ensure_dir
-from utils.basic import print_, print_stats
+from pips_utils.util import ensure_dir
+from pips_utils.basic import print_, print_stats
 import torch
 from tensorboardX import SummaryWriter
 import torch.nn.functional as F
@@ -90,7 +90,7 @@ def run_model(model, rgbs, N, sw, output_gifs_path):
     rgbs = F.pad(rgbs.reshape(B*S, 3, H, W), (pad, pad, pad, pad), 'constant', 0).reshape(B, S, 3, H+pad*2, W+pad*2)
     trajs_e = trajs_e + pad
 
-    prep_rgbs = utils.improc.preprocess_color(rgbs)
+    prep_rgbs = pips_utils.improc.preprocess_color(rgbs)
     gray_rgbs = torch.mean(prep_rgbs, dim=2, keepdim=True).repeat(1, 1, 3, 1, 1)
     
     if sw is not None and sw.save_this:
@@ -162,7 +162,7 @@ def main(input_images_path, output_gifs_path):
         
         global_step += 1
 
-        sw_t = utils.improc.Summ_writer(
+        sw_t = pips_utils.improc.Summ_writer(
             writer=writer_t,
             global_step=global_step,
             log_freq=log_freq,

@@ -10,8 +10,8 @@ import torch.nn.functional as F
 from PIL import Image
 import random
 from torch._C import dtype, set_flush_denormal
-import utils.basic
-import utils.improc
+import pips_utils.basic
+import pips_utils.improc
 import glob
 import json
 import imageio

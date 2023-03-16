@@ -5,16 +5,16 @@ import saverloader
 from nets.raftnet import Raftnet
 from nets.pips import Pips
 import random
-from utils.basic import print_, print_stats
+from pips_utils.basic import print_, print_stats
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from tensorboardX import SummaryWriter
 import torch.nn.functional as F
 from badjadataset import BadjaDataset
-import utils.basic
-import utils.improc
-import utils.test
+import pips_utils.basic
+import pips_utils.improc
+import pips_utils.test
 from fire import Fire
 import cv2
 
@@ -112,8 +112,8 @@ def run_pips(pips, d, sw):
                 done = True
         trajs_e[:,:,n] = traj_e
 
-    prep_rgbs = utils.improc.preprocess_color(rgbs)
-    label_colors = utils.improc.get_n_colors(N)
+    prep_rgbs = pips_utils.improc.preprocess_color(rgbs)
+    label_colors = pips_utils.improc.get_n_colors(N)
     gray_rgbs = torch.mean(prep_rgbs, dim=2, keepdim=True).repeat(1, 1, 3, 1, 1)
     
     if sw is not None and sw.save_this:
@@ -129,7 +129,7 @@ def run_pips(pips, d, sw):
         if False: # very expensive vis
             kp_vis = []
             for s in range(S):
-                kp = utils.improc.draw_circles_at_xy(trajs_e[0:1,s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
+                kp = pips_utils.improc.draw_circles_at_xy(trajs_e[0:1, s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
                 kp = sw.summ_soft_seg_thr('', kp, label_colors=label_colors, only_return=True).cuda()
                 kp_any = (torch.max(kp, dim=1, keepdims=True)[0]).repeat(1, 3, 1, 1)
                 rgb = (torch.mean(rgbs[:,s], dim=1, keepdim=True).repeat(1, 3, 1, 1)).byte()
@@ -193,7 +193,7 @@ def run_raft(raft, d, sw):
     segs = (segs > 0).float()
     assert(B==1)
     
-    prep_rgbs = utils.improc.preprocess_color(rgbs)
+    prep_rgbs = pips_utils.improc.preprocess_color(rgbs)
     gray_rgbs = torch.mean(prep_rgbs, dim=2, keepdim=True).repeat(1, 1, 3, 1, 1)
 
     flows_e = []
@@ -210,7 +210,7 @@ def run_raft(raft, d, sw):
     coords.append(coord0)
     coord = coord0.clone()
     for s in range(S-1):
-        delta = utils.samp.bilinear_sample2d(
+        delta = pips_utils.samp.bilinear_sample2d(
             flows_e[:,s], coord[:,:,0], coord[:,:,1]).permute(0,2,1) # B, N, 2, forward flow at the discrete points
         coord = coord + delta
         coords.append(coord)
@@ -235,7 +235,7 @@ def run_raft(raft, d, sw):
     pck = torch.mean(torch.stack(accs)) * 100.0
     metrics['pck'] = pck.item()
     
-    label_colors = utils.improc.get_n_colors(N)
+    label_colors = pips_utils.improc.get_n_colors(N)
 
     if sw is not None and sw.save_this:
         sw.summ_rgbs('inputs/rgbs', prep_rgbs.unbind(1))
@@ -248,7 +248,7 @@ def run_raft(raft, d, sw):
         if False: 
             kp_vis = []
             for s in range(S):
-                kp = utils.improc.draw_circles_at_xy(trajs_g[0:1,s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
+                kp = pips_utils.improc.draw_circles_at_xy(trajs_g[0:1, s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
                 kp = kp * visibles[0:1,0].reshape(1, N, 1, 1)
                 kp = sw.summ_soft_seg_thr('', kp, label_colors=label_colors, only_return=True).cuda()
 
@@ -264,7 +264,7 @@ def run_raft(raft, d, sw):
 
             kp_vis = []
             for s in range(S):
-                kp = utils.improc.draw_circles_at_xy(trajs_e[0:1,s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
+                kp = pips_utils.improc.draw_circles_at_xy(trajs_e[0:1, s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
                 kp = sw.summ_soft_seg_thr('', kp, label_colors=label_colors, only_return=True).cuda()
                 kp_any = (torch.max(kp, dim=1, keepdims=True)[0]).repeat(1, 3, 1, 1)
                 rgb = (torch.mean(rgbs[:,s], dim=1, keepdim=True).repeat(1, 3, 1, 1)).byte()
@@ -500,7 +500,7 @@ def run_dino(dino, d, sw):
     pck = torch.mean(torch.stack(accs)) * 100.0
     metrics['pck'] = pck.item()
 
-    prep_rgbs = utils.improc.preprocess_color(rgbs)
+    prep_rgbs = pips_utils.improc.preprocess_color(rgbs)
     gray_rgbs = torch.mean(prep_rgbs, dim=2, keepdim=True).repeat(1, 1, 3, 1, 1)
     if sw is not None and sw.save_this:
         for n in range(N):
@@ -508,12 +508,12 @@ def run_dino(dino, d, sw):
                 sw.summ_traj2ds_on_rgbs('outputs/kp%d_trajs_e_on_rgbs' % n, trajs_e[0:1,:,n:n+1], gray_rgbs[0:1,:S], cmap='spring', linewidth=2)
         sw.summ_rgbs('inputs/rgbs', prep_rgbs.unbind(1))
         sw.summ_oneds('inputs/segs', segs.unbind(1))
-        label_colors = utils.improc.get_n_colors(N)
+        label_colors = pips_utils.improc.get_n_colors(N)
 
         if False:
             kp_vis = []
             for s in range(S):
-                kp = utils.improc.draw_circles_at_xy(trajs_g[0:1,s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
+                kp = pips_utils.improc.draw_circles_at_xy(trajs_g[0:1, s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
                 kp = kp * visibles[0:1,0].reshape(1, N, 1, 1)
                 kp = sw.summ_soft_seg_thr('', kp, label_colors=label_colors, only_return=True).cuda()
                 kp_any = (torch.max(kp, dim=1, keepdims=True)[0]).repeat(1, 3, 1, 1)
@@ -525,7 +525,7 @@ def run_dino(dino, d, sw):
 
             kp_vis = []
             for s in range(S):
-                kp = utils.improc.draw_circles_at_xy(trajs_e[0:1,s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
+                kp = pips_utils.improc.draw_circles_at_xy(trajs_e[0:1, s], H_, W_, sigma=4).squeeze(2) # 1, N, H_, W_
                 kp = sw.summ_soft_seg_thr('', kp, label_colors=label_colors, only_return=True).cuda()
                 kp_any = (torch.max(kp, dim=1, keepdims=True)[0]).repeat(1, 3, 1, 1)
                 rgb = (torch.mean(rgbs[:,s], dim=1, keepdim=True).repeat(1, 3, 1, 1)).byte()
@@ -598,7 +598,7 @@ def main(
         
         global_step += 1
 
-        sw_t = utils.improc.Summ_writer(
+        sw_t = pips_utils.improc.Summ_writer(
             writer=writer_t,
             global_step=global_step,
             log_freq=log_freq,

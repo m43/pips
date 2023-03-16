@@ -1,5 +1,5 @@
 import torch
-import utils.samp
+import pips_utils.samp
 
 def filter_trajs(trajs_e, all_masks, all_flows_f, all_flows_b):
     B, S, N, D = trajs_e.shape
@@ -21,14 +21,14 @@ def filter_trajs(trajs_e, all_masks, all_flows_f, all_flows_b):
     # print('trajs_e in', trajs_e.shape)
 
     # req that we stay in the same object id
-    id0 = utils.samp.bilinear_sample2d(all_masks[:,0], trajs_e[:,0,:,0].round(), trajs_e[:,0,:,1].round()).reshape(-1) # N
+    id0 = pips_utils.samp.bilinear_sample2d(all_masks[:, 0], trajs_e[:, 0, :, 0].round(), trajs_e[:, 0, :, 1].round()).reshape(-1) # N
     id_ok = torch.ones_like(id0) > 0
     for s in range(S):
         # the aliasing for masks and flow is slightly different,
         # so let's require the 3x3 neighborhood to match
         for dx in [-1,0,1]:
             for dy in [-1,0,1]:
-                idi = utils.samp.bilinear_sample2d(all_masks[:,s], trajs_e[:,s,:,0].round() + dx, trajs_e[:,s,:,1].round() + dy).reshape(-1) # N
+                idi = pips_utils.samp.bilinear_sample2d(all_masks[:, s], trajs_e[:, s, :, 0].round() + dx, trajs_e[:, s, :, 1].round() + dy).reshape(-1) # N
                 id_ok = id_ok & (idi == id0)
     trajs_e = trajs_e[:,:,id_ok]
     # print('trajs_e id', trajs_e.shape)
@@ -36,8 +36,8 @@ def filter_trajs(trajs_e, all_masks, all_flows_f, all_flows_b):
     # req forward-backward consistency
     fb_ok = torch.ones_like(trajs_e[0,0,:,0]) > 0
     for s in range(S-1):
-        ff = utils.samp.bilinear_sample2d(all_flows_f[:,s], trajs_e[:,s,:,0].round(), trajs_e[:,s,:,1].round()).permute(0,2,1).reshape(-1, 2) # N,2
-        bf = utils.samp.bilinear_sample2d(all_flows_b[:,s], trajs_e[:,s+1,:,0].round(), trajs_e[:,s+1,:,1].round()).permute(0,2,1).reshape(-1, 2) # N,2
+        ff = pips_utils.samp.bilinear_sample2d(all_flows_f[:, s], trajs_e[:, s, :, 0].round(), trajs_e[:, s, :, 1].round()).permute(0, 2, 1).reshape(-1, 2) # N,2
+        bf = pips_utils.samp.bilinear_sample2d(all_flows_b[:, s], trajs_e[:, s + 1, :, 0].round(), trajs_e[:, s + 1, :, 1].round()).permute(0, 2, 1).reshape(-1, 2) # N,2
         dist = torch.norm(ff+bf, dim=1)
         # print_stats('dist', dist)
         fb_ok = fb_ok & (dist < 0.5)

@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from functools import partial
-import utils.basic
-from utils.basic import print_stats
-import utils.samp
-import utils.misc
+import pips_utils.basic
+from pips_utils.basic import print_stats
+import pips_utils.samp
+import pips_utils.misc
 from torch import nn, einsum
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange, Reduce
@@ -29,8 +29,8 @@ def balanced_ce_loss(pred, gt, valid=None):
     b = F.relu(a)
     loss = b + torch.log(torch.exp(-b)+torch.exp(a-b))
     
-    pos_loss = utils.basic.reduce_masked_mean(loss, pos*valid)
-    neg_loss = utils.basic.reduce_masked_mean(loss, neg*valid)
+    pos_loss = pips_utils.basic.reduce_masked_mean(loss, pos * valid)
+    neg_loss = pips_utils.basic.reduce_masked_mean(loss, neg * valid)
 
     balanced_loss = pos_loss + neg_loss
 
@@ -51,7 +51,7 @@ def sequence_loss(flow_preds, flow_gt, vis, valids, gamma=0.8):
         flow_pred = flow_preds[i]#[:,:,0:1]
         i_loss = (flow_pred - flow_gt).abs() # B, S, N, 2
         i_loss = torch.mean(i_loss, dim=3) # B, S, N
-        flow_loss += i_weight * utils.basic.reduce_masked_mean(i_loss, valids)
+        flow_loss += i_weight * pips_utils.basic.reduce_masked_mean(i_loss, valids)
     flow_loss = flow_loss/n_predictions
     return flow_loss
 
@@ -304,7 +304,7 @@ class DeltaBlock(nn.Module):
     def forward(self, fhid, fcorr, flow):
         B, S, D = flow.shape
         assert(D==3)
-        flow_sincos = utils.misc.get_3d_embedding(flow, 64, cat_coords=True)
+        flow_sincos = pips_utils.misc.get_3d_embedding(flow, 64, cat_coords=True)
         x = torch.cat([fhid, fcorr, flow_sincos], dim=2) # B, S, -1
         delta = self.to_delta(x)
         delta = delta.reshape(B, self.S, self.input_dim+2)
@@ -460,7 +460,7 @@ class Pips(nn.Module):
 
         if feat_init is None:
             # initialize features for the whole traj, using the initial feature
-            ffeat = utils.samp.bilinear_sample2d(fmaps[:,0], coords[:,0,:,0], coords[:,0,:,1]).permute(0, 2, 1) # B, N, C
+            ffeat = pips_utils.samp.bilinear_sample2d(fmaps[:, 0], coords[:, 0, :, 0], coords[:, 0, :, 1]).permute(0, 2, 1) # B, N, C
         else:
             ffeat = feat_init
         ffeats = ffeat.unsqueeze(1).repeat(1, S, 1, 1) # B, S, N, C
@@ -485,12 +485,12 @@ class Pips(nn.Module):
                 if trajs_g is not None:
                     e_ = coords_bak[0:1,s,0:1] # 1,1,2, in H8,W8 coords
                     g_ = trajs_g[0:1,s,0:1]/float(self.stride) # 1,1,2, in H8,W8 coords
-                    kp = utils.improc.draw_circles_at_xy(torch.cat([e_, g_], dim=1), H8, W8, sigma=1).squeeze(2)
-                    kp = utils.improc.seq2color(kp, colormap='onediff')
+                    kp = pips_utils.improc.draw_circles_at_xy(torch.cat([e_, g_], dim=1), H8, W8, sigma=1).squeeze(2)
+                    kp = pips_utils.improc.seq2color(kp, colormap='onediff')
                 else:
-                    kp = utils.improc.draw_circles_at_xy(coords[0:1,s,0:1], H8, W8, sigma=1).squeeze(2)
-                    kp = utils.improc.seq2color(kp, colormap='spring')
-                kp = utils.improc.back2color(kp)
+                    kp = pips_utils.improc.draw_circles_at_xy(coords[0:1, s, 0:1], H8, W8, sigma=1).squeeze(2)
+                    kp = pips_utils.improc.seq2color(kp, colormap='spring')
+                kp = pips_utils.improc.back2color(kp)
                 kp_vis.append(kp)
             kp_vis = torch.stack(kp_vis, dim=1)
             kps.append(kp_vis)
@@ -545,13 +545,13 @@ class Pips(nn.Module):
                     if trajs_g is not None:
                         e_ = coords[0:1,s,0:1] # 1,1,2, in H8,W8 coords
                         g_ = trajs_g[0:1,s,0:1]/float(self.stride) # 1,1,2, in H8,W8 coords
-                        kp = utils.improc.draw_circles_at_xy(torch.cat([e_, g_], dim=1), H8, W8, sigma=1).squeeze(2)
-                        kp = utils.improc.seq2color(kp, colormap='onediff')
+                        kp = pips_utils.improc.draw_circles_at_xy(torch.cat([e_, g_], dim=1), H8, W8, sigma=1).squeeze(2)
+                        kp = pips_utils.improc.seq2color(kp, colormap='onediff')
                     else:
-                        kp = utils.improc.draw_circles_at_xy(coords[0:1,s,0:1], H8, W8, sigma=1).squeeze(2)
-                        kp = utils.improc.seq2color(kp, colormap='spring')
+                        kp = pips_utils.improc.draw_circles_at_xy(coords[0:1, s, 0:1], H8, W8, sigma=1).squeeze(2)
+                        kp = pips_utils.improc.seq2color(kp, colormap='spring')
                                       
-                    kp = utils.improc.back2color(kp)
+                    kp = pips_utils.improc.back2color(kp)
                     kp_vis.append(kp)
                 kp_vis = torch.stack(kp_vis, dim=1)
                 kps.append(kp_vis)
@@ -570,7 +570,7 @@ class Pips(nn.Module):
             vis_fcp = []
 
             fcps_ = fcps[0:1,:,:,0:1].detach() # 1,S,I,N,H8,W8
-            fcps_ = utils.basic.normalize(fcps_)
+            fcps_ = pips_utils.basic.normalize(fcps_)
             for s in range(S):
                 fcp = fcps_[0:1,s,:,0:1] # 1,I,1,H8,W8
                 fcp = torch.cat([fcp[:,0].unsqueeze(1), # zeroth

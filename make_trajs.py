@@ -13,8 +13,8 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import math
 import torch.nn.functional as F
-import utils.improc
-from utils.basic import readPFM
+import pips_utils.improc
+from pips_utils.basic import readPFM
 import random
 import glob
 from filter_trajs import filter_trajs
@@ -82,7 +82,7 @@ def helper(rgb_path, mask_path, flow_path, out_dir, folder_name, lr, start_ind, 
             sys.stdout.write('!')
             return
 
-    bak_all_rgbs = utils.improc.preprocess_color(torch.from_numpy(np.stack(rgbs, 0)).to(device)).permute(0,3,1,2).unsqueeze(0)
+    bak_all_rgbs = pips_utils.improc.preprocess_color(torch.from_numpy(np.stack(rgbs, 0)).to(device)).permute(0, 3, 1, 2).unsqueeze(0)
     bak_all_masks = torch.from_numpy(np.stack(masks, 0)).to(device).unsqueeze(0).unsqueeze(2) # 1, S, 1, H, W
     bak_all_flows_f = torch.from_numpy(np.stack(flows_f, 0)).to(device).permute(0,3,1,2).unsqueeze(0)
     bak_all_flows_b = torch.from_numpy(np.stack(flows_b, 0)).to(device).permute(0,3,1,2).unsqueeze(0)
@@ -105,7 +105,7 @@ def helper(rgb_path, mask_path, flow_path, out_dir, folder_name, lr, start_ind, 
         sw.summ_rgbs('inputs_%d/rgbs' % start_ind, all_rgbs.unbind(1))
         sw.summ_oneds('inputs_%d/masks' % start_ind, all_masks.unbind(1))
 
-    ys, xs = utils.basic.meshgrid2d(1, H, W)
+    ys, xs = pips_utils.basic.meshgrid2d(1, H, W)
     xs = xs.reshape(1, -1)
     ys = ys.reshape(1, -1)
 
@@ -113,7 +113,7 @@ def helper(rgb_path, mask_path, flow_path, out_dir, folder_name, lr, start_ind, 
     coord = torch.stack([xs, ys], dim=2) # B, N, 2
     coords.append(coord)
     for s in range(S-1):
-        delta = utils.samp.bilinear_sample2d(all_flows_f[:,s], coord[:,:,0].round(), coord[:,:,1].round()).permute(0,2,1) # B,N,2: forward flow at the discrete points
+        delta = pips_utils.samp.bilinear_sample2d(all_flows_f[:, s], coord[:, :, 0].round(), coord[:, :, 1].round()).permute(0, 2, 1) # B,N,2: forward flow at the discrete points
         coord = coord + delta
         coords.append(coord)
     trajs = torch.stack(coords, dim=1) # B, S, N, 2
@@ -125,7 +125,7 @@ def helper(rgb_path, mask_path, flow_path, out_dir, folder_name, lr, start_ind, 
 
         max_show = 500
         if not trajs.shape[2] < max_show:
-            inds = utils.geom.farthest_point_sample(trajs[:,0], max_show, deterministic=False)
+            inds = pips_utils.geom.farthest_point_sample(trajs[:, 0], max_show, deterministic=False)
             trajs_vis = trajs[:,:,inds.reshape(-1)]
         else:
             trajs_vis = trajs.clone()
@@ -187,7 +187,7 @@ def go():
                     for start_ind in [0,1,2]:
                         global_step += 1
                         if include_vis:
-                            sw = utils.improc.Summ_writer(
+                            sw = pips_utils.improc.Summ_writer(
                                 writer=writer,
                                 global_step=global_step,
                                 log_freq=log_freq,

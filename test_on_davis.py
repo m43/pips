@@ -5,10 +5,10 @@ import timeit
 import cv2
 import saverloader
 from nets.pips import Pips
-import utils.basic
-import utils.improc
+import pips_utils.basic
+import pips_utils.improc
 import random
-from utils.basic import print_, print_stats
+from pips_utils.basic import print_, print_stats
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
@@ -98,11 +98,11 @@ def run_model(model, frame_list, video_dir, first_seg, seg_ori, sw, use_mask=Fal
     segs = (segs==1).float()
     
     seg0 = segs[:,0]
-    seg0_safe = utils.improc.erode2d(seg0, times=3)
+    seg0_safe = pips_utils.improc.erode2d(seg0, times=3)
     
     point_stride = 8
     H2, W2 = int(H/point_stride), int(W/point_stride)
-    xy = utils.basic.gridcloud2d(1, H2, W2).reshape(H2*W2, 2)*point_stride
+    xy = pips_utils.basic.gridcloud2d(1, H2, W2).reshape(H2 * W2, 2) * point_stride
     if use_mask:
         seg0_ = F.interpolate(seg0_safe, (H2, W2), mode='nearest')
         xy = xy[seg0_.reshape(H2*W2) > 0]
@@ -134,15 +134,15 @@ def run_model(model, frame_list, video_dir, first_seg, seg_ori, sw, use_mask=Fal
     print('trajs_e', trajs_e.shape)
     print('vis_e', vis_e.shape)
 
-    sw.summ_traj2ds_on_rgbs('outputs/trajs_on_rgbs_plasma', trajs_e[0:1], utils.improc.preprocess_color(rgbs), cmap='plasma')
-    sw.summ_traj2ds_on_rgbs2('outputs/trajs_on_rgbs2', trajs_e[0:1], vis_e[0:1], utils.improc.preprocess_color(rgbs[0:1]), cmap='spring')
-    sw.summ_rgb('outputs/rgb0', utils.improc.preprocess_color(rgbs[:,0]))
-    sw.summ_rgb('outputs/mean_rgb', utils.improc.preprocess_color(torch.mean(rgbs, dim=1)))
-    sw.summ_traj2ds_on_rgb('outputs/trajs_on_rgb', trajs_e[0:1], utils.improc.preprocess_color(rgbs[:,0]), cmap='spring')
-    sw.summ_traj2ds_on_rgb('outputs/trajs_on_black', trajs_e[0:1], utils.improc.preprocess_color(rgbs[:,0]*0), cmap='spring')
+    sw.summ_traj2ds_on_rgbs('outputs/trajs_on_rgbs_plasma', trajs_e[0:1], pips_utils.improc.preprocess_color(rgbs), cmap='plasma')
+    sw.summ_traj2ds_on_rgbs2('outputs/trajs_on_rgbs2', trajs_e[0:1], vis_e[0:1], pips_utils.improc.preprocess_color(rgbs[0:1]), cmap='spring')
+    sw.summ_rgb('outputs/rgb0', pips_utils.improc.preprocess_color(rgbs[:, 0]))
+    sw.summ_rgb('outputs/mean_rgb', pips_utils.improc.preprocess_color(torch.mean(rgbs, dim=1)))
+    sw.summ_traj2ds_on_rgb('outputs/trajs_on_rgb', trajs_e[0:1], pips_utils.improc.preprocess_color(rgbs[:, 0]), cmap='spring')
+    sw.summ_traj2ds_on_rgb('outputs/trajs_on_black', trajs_e[0:1], pips_utils.improc.preprocess_color(rgbs[:, 0] * 0), cmap='spring')
     sw.summ_traj2ds_on_rgb('outputs/trajs_on_white', trajs_e[0:1], 0.5*torch.ones_like(rgbs[:,0]), cmap='spring')
     sw.summ_traj2ds_on_rgb('outputs/trajs_on_white6', trajs_e[0:1], 0.5*torch.ones_like(rgbs[:,0]), cmap='plasma')
-    sw.summ_traj2ds_on_rgb('outputs/trajs_on_rgb6', trajs_e[0:1], utils.improc.preprocess_color(rgbs[:,0]), cmap='plasma')
+    sw.summ_traj2ds_on_rgb('outputs/trajs_on_rgb6', trajs_e[0:1], pips_utils.improc.preprocess_color(rgbs[:, 0]), cmap='plasma')
     sw.summ_traj2ds_on_rgb('outputs/trajs_on_white7', trajs_e[0:1], 0.5*torch.ones_like(rgbs[:,0]), cmap='plasma_r')
     sw.summ_traj2ds_on_rgb('outputs/trajs_on_white8', trajs_e[0:1], 0.5*torch.ones_like(rgbs[:,0]), cmap='hot')
     return 
@@ -180,7 +180,7 @@ if __name__ == '__main__':
         video_name = video_name.strip()
 
         global_step = i
-        sw = utils.improc.Summ_writer(
+        sw = pips_utils.improc.Summ_writer(
             writer=writer,
             global_step=global_step,
             log_freq=99999,

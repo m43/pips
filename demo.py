@@ -12,10 +12,10 @@ from PIL import Image
 from tensorboardX import SummaryWriter
 
 import saverloader
-import utils.improc
+import pips_utils.improc
 from nets.pips import Pips
-from utils.basic import print_, print_stats
-from utils.util import ensure_dir
+from pips_utils.basic import print_, print_stats
+from pips_utils.util import ensure_dir
 
 random.seed(125)
 np.random.seed(125)
@@ -32,7 +32,7 @@ def run_model(model, rgbs, N, sw, output_gifs_path):
 
     # pick N points to track; we'll use a uniform grid
     N_ = np.sqrt(N).round().astype(np.int32)
-    grid_y, grid_x = utils.basic.meshgrid2d(B, N_, N_, stack=False, norm=False, device='cuda')
+    grid_y, grid_x = pips_utils.basic.meshgrid2d(B, N_, N_, stack=False, norm=False, device='cuda')
     grid_y = 8 + grid_y.reshape(B, -1)/float(N_-1) * (H-16)
     grid_x = 8 + grid_x.reshape(B, -1)/float(N_-1) * (W-16)
     xy = torch.stack([grid_x, grid_y], dim=-1) # B, N_*N_, 2
@@ -51,13 +51,13 @@ def run_model(model, rgbs, N, sw, output_gifs_path):
         linewidth = 2
 
         # visualize the input
-        o1 = sw.summ_rgbs('inputs/rgbs', utils.improc.preprocess_color(rgbs[0:1]).unbind(1))
+        o1 = sw.summ_rgbs('inputs/rgbs', pips_utils.improc.preprocess_color(rgbs[0:1]).unbind(1))
         # visualize the trajs overlaid on the rgbs
-        o2 = sw.summ_traj2ds_on_rgbs('outputs/trajs_on_rgbs', trajs_e[0:1], utils.improc.preprocess_color(rgbs[0:1]), cmap='spring', linewidth=linewidth)
+        o2 = sw.summ_traj2ds_on_rgbs('outputs/trajs_on_rgbs', trajs_e[0:1], pips_utils.improc.preprocess_color(rgbs[0:1]), cmap='spring', linewidth=linewidth)
         # visualize the trajs alone
         o3 = sw.summ_traj2ds_on_rgbs('outputs/trajs_on_black', trajs_e[0:1], torch.ones_like(rgbs[0:1])*-0.5, cmap='spring', linewidth=linewidth)
         # alternate vis
-        o4 = sw.summ_traj2ds_on_rgbs2('outputs/trajs_on_rgbs2', trajs_e[0:1], vis_e[0:1], utils.improc.preprocess_color(rgbs[0:1]))
+        o4 = sw.summ_traj2ds_on_rgbs2('outputs/trajs_on_rgbs2', trajs_e[0:1], vis_e[0:1], pips_utils.improc.preprocess_color(rgbs[0:1]))
         # concat these for a synced wide vis
         wide_cat = torch.cat([o1, o2, o4, o3], dim=-1)
         sw.summ_rgbs('outputs/wide_cat', wide_cat.unbind(1))
@@ -74,7 +74,7 @@ def run_model(model, rgbs, N, sw, output_gifs_path):
         rgb_vis = []
         for trajs_e_ in preds_anim:
             trajs_e_ = trajs_e_ + pad
-            rgb_vis.append(sw.summ_traj2ds_on_rgb('', trajs_e_[0:1], torch.mean(utils.improc.preprocess_color(rgbs[0:1]), dim=1), cmap='spring', linewidth=linewidth, only_return=True))
+            rgb_vis.append(sw.summ_traj2ds_on_rgb('', trajs_e_[0:1], torch.mean(pips_utils.improc.preprocess_color(rgbs[0:1]), dim=1), cmap='spring', linewidth=linewidth, only_return=True))
         sw.summ_rgbs('outputs/animated_trajs_on_rgb', rgb_vis)
 
     return trajs_e-pad
@@ -128,7 +128,7 @@ def main(input_images_path, output_gifs_path):
 
         global_step += 1
 
-        sw_t = utils.improc.Summ_writer(
+        sw_t = pips_utils.improc.Summ_writer(
             writer=writer_t,
             global_step=global_step,
             log_freq=log_freq,

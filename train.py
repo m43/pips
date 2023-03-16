@@ -3,9 +3,9 @@ import numpy as np
 import timeit
 import saverloader
 from nets.pips import Pips
-import utils.improc
+import pips_utils.improc
 import random
-from utils.basic import print_, print_stats
+from pips_utils.basic import print_, print_stats
 import flyingthingsdataset
 import torch
 import torch.nn as nn
@@ -87,9 +87,9 @@ def run_model(model, d, device, I=6, horz_flip=False, vert_flip=False, sw=None, 
     total_loss += ce_loss.mean()
 
     ate = torch.norm(preds[-1] - trajs_g, dim=-1) # B, S, N
-    ate_all = utils.basic.reduce_masked_mean(ate, valids)
-    ate_vis = utils.basic.reduce_masked_mean(ate, valids*vis_g)
-    ate_occ = utils.basic.reduce_masked_mean(ate, valids*(1.0-vis_g))
+    ate_all = pips_utils.basic.reduce_masked_mean(ate, valids)
+    ate_vis = pips_utils.basic.reduce_masked_mean(ate, valids * vis_g)
+    ate_occ = pips_utils.basic.reduce_masked_mean(ate, valids * (1.0 - vis_g))
     
     metrics = {
         'ate_all': ate_all.item(),
@@ -117,17 +117,17 @@ def run_model(model, d, device, I=6, horz_flip=False, vert_flip=False, sw=None, 
         # sw.summ_oneds('0_inputs/occs', occs.unbind(1), frame_ids=counts_)
         # sw.summ_oneds('0_inputs/masks', masks.unbind(1), frame_ids=counts_)
         # sw.summ_traj2ds_on_rgbs('0_inputs/trajs_g_on_rgbs2', trajs_g[0:1], vis_g[0:1], utils.improc.preprocess_color(rgbs[0:1]), valids=valids[0:1], cmap='winter')
-        sw.summ_traj2ds_on_rgbs2('0_inputs/trajs_on_rgbs2', trajs_g[0:1], vis_g[0:1], utils.improc.preprocess_color(rgbs[0:1]))
+        sw.summ_traj2ds_on_rgbs2('0_inputs/trajs_on_rgbs2', trajs_g[0:1], vis_g[0:1], pips_utils.improc.preprocess_color(rgbs[0:1]))
         
-        sw.summ_traj2ds_on_rgb('0_inputs/trajs_g_on_rgb', trajs_g[0:1], torch.mean(utils.improc.preprocess_color(rgbs[0:1]), dim=1), cmap='winter')
+        sw.summ_traj2ds_on_rgb('0_inputs/trajs_g_on_rgb', trajs_g[0:1], torch.mean(pips_utils.improc.preprocess_color(rgbs[0:1]), dim=1), cmap='winter')
 
         for b in range(B):
-            sw.summ_traj2ds_on_rgb('0_batch_inputs/trajs_g_on_rgb_%d' % b, trajs_g[b:b+1], torch.mean(utils.improc.preprocess_color(rgbs[b:b+1]), dim=1), cmap='winter')
+            sw.summ_traj2ds_on_rgb('0_batch_inputs/trajs_g_on_rgb_%d' % b, trajs_g[b:b+1], torch.mean(pips_utils.improc.preprocess_color(rgbs[b:b + 1]), dim=1), cmap='winter')
 
         # sw.summ_traj2ds_on_rgbs2('2_outputs/trajs_e_on_rgbs', trajs_e[0:1], torch.sigmoid(vis_e[0:1]), utils.improc.preprocess_color(rgbs[0:1]), cmap='spring')
         # sw.summ_traj2ds_on_rgbs('2_outputs/trajs_on_black', trajs_e[0:1], torch.ones_like(rgbs[0:1])*-0.5, cmap='spring')
 
-        gt_rgb = utils.improc.preprocess_color(sw.summ_traj2ds_on_rgb('', trajs_g[0:1], torch.mean(utils.improc.preprocess_color(rgbs[0:1]), dim=1), valids=valids[0:1], cmap='winter', frame_id=metrics['ate_all'], only_return=True))
+        gt_rgb = pips_utils.improc.preprocess_color(sw.summ_traj2ds_on_rgb('', trajs_g[0:1], torch.mean(pips_utils.improc.preprocess_color(rgbs[0:1]), dim=1), valids=valids[0:1], cmap='winter', frame_id=metrics['ate_all'], only_return=True))
         # gt_black = utils.improc.preprocess_color(sw.summ_traj2ds_on_rgb('', trajs_g[0:1], torch.ones_like(rgbs[0:1,0])*-0.5, valids=valids[0:1], cmap='winter', frame_id=metrics['ate_all'], only_return=True))
         sw.summ_traj2ds_on_rgb('2_outputs/single_trajs_on_gt_rgb', trajs_e[0:1], gt_rgb[0:1], cmap='spring')
         # sw.summ_traj2ds_on_rgb('2_outputs/single_trajs_on_gt_black', trajs_e[0:1], gt_black[0:1], cmap='spring')
@@ -272,21 +272,21 @@ def main(
     
 
     n_pool = 100
-    loss_pool_t = utils.misc.SimplePool(n_pool, version='np')
-    ce_pool_t = utils.misc.SimplePool(n_pool, version='np')
-    vis_pool_t = utils.misc.SimplePool(n_pool, version='np')
-    seq_pool_t = utils.misc.SimplePool(n_pool, version='np')
-    ate_all_pool_t = utils.misc.SimplePool(n_pool, version='np')
-    ate_vis_pool_t = utils.misc.SimplePool(n_pool, version='np')
-    ate_occ_pool_t = utils.misc.SimplePool(n_pool, version='np')
+    loss_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
+    ce_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
+    vis_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
+    seq_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
+    ate_all_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
+    ate_vis_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
+    ate_occ_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
     if val_freq > 0:
-        loss_pool_v = utils.misc.SimplePool(n_pool, version='np')
-        ce_pool_v = utils.misc.SimplePool(n_pool, version='np')
-        vis_pool_v = utils.misc.SimplePool(n_pool, version='np')
-        seq_pool_v = utils.misc.SimplePool(n_pool, version='np')
-        ate_all_pool_v = utils.misc.SimplePool(n_pool, version='np')
-        ate_vis_pool_v = utils.misc.SimplePool(n_pool, version='np')
-        ate_occ_pool_v = utils.misc.SimplePool(n_pool, version='np')
+        loss_pool_v = pips_utils.misc.SimplePool(n_pool, version='np')
+        ce_pool_v = pips_utils.misc.SimplePool(n_pool, version='np')
+        vis_pool_v = pips_utils.misc.SimplePool(n_pool, version='np')
+        seq_pool_v = pips_utils.misc.SimplePool(n_pool, version='np')
+        ate_all_pool_v = pips_utils.misc.SimplePool(n_pool, version='np')
+        ate_vis_pool_v = pips_utils.misc.SimplePool(n_pool, version='np')
+        ate_occ_pool_v = pips_utils.misc.SimplePool(n_pool, version='np')
     
     while global_step < max_iters:
 
@@ -300,7 +300,7 @@ def main(
             read_start_time = time.time()
 
             if internal_step==grad_acc-1:
-                sw_t = utils.improc.Summ_writer(
+                sw_t = pips_utils.improc.Summ_writer(
                     writer=writer_t,
                     global_step=global_step,
                     log_freq=log_freq,
@@ -358,7 +358,7 @@ def main(
         if val_freq > 0 and (global_step) % val_freq == 0:
             torch.cuda.empty_cache()
             model.eval()
-            sw_v = utils.improc.Summ_writer(
+            sw_v = pips_utils.improc.Summ_writer(
                 writer=writer_v,
                 global_step=global_step,
                 log_freq=log_freq,
