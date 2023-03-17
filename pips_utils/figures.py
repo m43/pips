@@ -1,10 +1,15 @@
+import argparse
 import os
+from itertools import cycle
 from typing import Dict, List
 
 import pandas as pd
 import seaborn as sns
 import torch
 from matplotlib import pyplot as plt
+from matplotlib.lines import Line2D
+
+from pips_utils.util import get_str_formatted_time, ensure_dir
 
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
@@ -27,8 +32,6 @@ plt.rcParams.update({
     'ytick.labelsize': '16',
     'figure.dpi': 200,
 })
-
-palette = ["GoldenRod", "r", "forestgreen", "yellow"]
 
 
 def average_displacement_error(trajectory_a: torch.Tensor, trajectory_b: torch.Tensor) -> float:
@@ -176,8 +179,8 @@ def compute_summary(results: Dict) -> Dict:
         - 'ade_visible_chain': The average displacement error between the first visible chain
            of the ground-truth and predicted trajectories.
         - 'n_timesteps': The length of the trajectory.
-        - 'n_visible': The number of visible points in the ground-truth trajectory.
-        - 'n_visible_chain': The number of visible points in the ground-truth trajectory, assuming a chain structure.
+        - 'n_timesteps_visible': The number of visible points in the ground-truth trajectory.
+        - 'n_timesteps_visible_chain': The number of visible points in the ground-truth trajectory, assuming a chain structure.
 
     Examples
     --------
@@ -197,8 +200,8 @@ def compute_summary(results: Dict) -> Dict:
         'ade_visible': 0.7071067690849304,
         'ade_visible_chain': 0.7071067690849304,
         'n_timesteps': 3,
-        'n_visible': 2,
-        'n_visible_chain': 2
+        'n_timesteps_visible': 2,
+        'n_timesteps_visible_chain': 2
     }
     """
     assert results["valids"].all(), "Assume all points are valid for each timestep"
@@ -215,8 +218,8 @@ def compute_summary(results: Dict) -> Dict:
         "ade_visible": average_displacement_error(traj_gt_visible, traj_pred_visible),
         "ade_visible_chain": average_displacement_error(traj_gt_visible_chain, traj_pred_visible_chain),
         "n_timesteps": len(traj_gt),
-        "n_visible": len(traj_gt_visible),
-        "n_visible_chain": len(traj_gt_visible_chain),
+        "n_timesteps_visible": len(traj_gt_visible),
+        "n_timesteps_visible_chain": len(traj_gt_visible_chain),
     }
     return summary
 
@@ -238,8 +241,8 @@ def compute_summary_df(results_list: List[Dict]) -> pd.DataFrame:
             - 'ade_visible_chain' (float): the average displacement error between the visible trajectory chains
                                            of the ground truth and predicted trajectories.
             - 'n_timesteps' (int): the length of the trajectory.
-            - 'n_visible' (int): the number of visible points in the ground truth trajectory.
-            - 'n_visible_chain' (int): the number of visible points in the visible trajectory chain
+            - 'n_timesteps_visible' (int): the number of visible points in the ground truth trajectory.
+            - 'n_timesteps_visible_chain' (int): the number of visible points in the visible trajectory chain
                                        of the ground truth trajectory.
     """
     summaries = []
@@ -247,3 +250,164 @@ def compute_summary_df(results_list: List[Dict]) -> pd.DataFrame:
         summaries += [compute_summary(results)]
     return pd.DataFrame.from_records(summaries)
 
+
+def figure1(
+        df: pd.DataFrame,
+        output_path: str,
+        log_y: bool = False,
+        name: str = "figure1",
+        title: str = rf"ADE per visible chain length (w/ 95\% CI)"
+) -> None:
+    df = df.copy()
+    df = df[df.n_timesteps_visible_chain > 1]
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    fig.suptitle(title)
+    sns.lineplot(
+        df,
+        x="n_timesteps_visible_chain",
+        y="ade_visible_chain",
+        hue="name",
+        palette=cycle(["GoldenRod", "r", "forestgreen", "yellow"]),
+        linestyle="-",
+        linewidth=2,
+        errorbar=("ci", 95),
+        markers=True,
+        dashes=False,
+        err_style="band",
+        # err_style="bars", err_kws={"fmt": 'o', "linewidth": 2, "capsize": 6},
+        alpha=1,
+        ax=ax,
+    )
+    ax.set_xlabel(rf"visibility chain length")
+    ax.set_ylabel(rf"ADE")
+    if log_y:
+        plt.yscale('log')
+    ax.legend_.set_title(None)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_path, f"{name}.png"))
+    plt.savefig(os.path.join(output_path, f"PDF__{name}.pdf"))
+    plt.show()
+    plt.close()
+    plt.clf()
+
+
+def figure2(
+        df: pd.DataFrame,
+        output_path: str,
+        ade_metric: str = "ade_visible",
+        log_y: bool = False,
+        name: str = "figure2",
+        title: str = rf"ADE for mostly visible (w/ 95\% CI)"
+) -> None:
+    df = df.copy()
+    df_list = []
+    for mostly_visible_threshold in range(1, int(df.n_timesteps_visible.max()) + 1):
+        df_ = df.copy()
+        df_["mostly_visible_threshold"] = mostly_visible_threshold
+        df_["mostly_visible"] = (df_.n_timesteps_visible >= mostly_visible_threshold).apply(
+            lambda x: "Mostly Visible" if x else "Mostly Occluded")
+        df_list += [df_]
+
+        df_ = df.copy()
+        df_["mostly_visible_threshold"] = mostly_visible_threshold
+        df_["mostly_visible"] = "All"
+        df_list += [df_]
+
+    df = pd.concat(df_list).reset_index()
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    fig.suptitle(title)
+    mostly_visible_types = ["Mostly Visible", "Mostly Occluded", "All"]
+    mostly_visible_linestlye = ["--", ":", "-"]
+    for mostly_visible, linestyle in zip(mostly_visible_types, mostly_visible_linestlye, strict=True):
+        sns.lineplot(
+            df[df.mostly_visible == mostly_visible],
+            x="mostly_visible_threshold",
+            y=ade_metric,
+            hue="name",
+            palette=cycle(["GoldenRod", "r", "forestgreen", "yellow"]),
+            linestyle=linestyle,
+            linewidth=2,
+            errorbar=("ci", 95),
+            markers=True,
+            dashes=False,
+            err_style="band",
+            alpha=1,
+            legend=mostly_visible == "All",
+            ax=ax,
+        )
+    texts = [t.get_text() for t in ax.get_legend().get_texts()] + mostly_visible_types
+    lines = ax.get_legend().get_lines() + [Line2D([0, 10], [0, 10], linewidth=2, color="black", linestyle=linestyle)
+                                           for linestyle in mostly_visible_linestlye]
+    new_legend = plt.legend(lines, texts, loc="center left")
+    ax.add_artist(new_legend)
+    ax.set_xlabel(rf"mostly visible threshold")
+    ax.set_ylabel(rf"ADE")
+    if log_y:
+        plt.yscale('log')
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_path, f"{name}_{ade_metric}.png"))
+    plt.savefig(os.path.join(output_path, f"PDF__{name}_{ade_metric}.pdf"))
+    plt.show()
+    plt.close()
+    plt.clf()
+
+
+def table1(
+        df: pd.DataFrame,
+        output_path: str,
+        ade_metric: str = "ade_visible",
+        mostly_visible_threshold: int = 4,
+        name: str = "table1"
+) -> None:
+    mostly_visible_indices = df.n_timesteps_visible >= mostly_visible_threshold
+    mostly_visible_ade_df = df[mostly_visible_indices][["name", ade_metric]].groupby("name").mean()
+    mostly_occluded_ade_df = df[~mostly_visible_indices][["name", ade_metric]].groupby("name").mean().rename(
+        columns={ade_metric: ade_metric.replace("_visible", "") + "_occluded"})
+    table_df = pd.merge(mostly_visible_ade_df, mostly_occluded_ade_df, left_index=True, right_index=True)
+    table_df = table_df.sort_values(ade_metric, ascending=False)
+    print(table_df)
+    table_df.to_csv(os.path.join(output_path, f"{name}_threshold-{mostly_visible_threshold}_metric-{ade_metric}.csv"))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--results_df_path_list", nargs='+', required=True,
+                        help="List of paths to results dataframes of contining evaluation results of different runs.")
+    parser.add_argument("--results_name_list", nargs='+', required=True,
+                        help="List of names to be used to identify each run.")
+    parser.add_argument("--output_path", type=str, default=f"logs/figures/{get_str_formatted_time()}",
+                        help="path to folder to save gifs to")
+    args = parser.parse_args()
+
+    assert len(args.results_df_path_list) == len(args.results_name_list)
+    assert len(args.results_name_list) == len(set(args.results_name_list))
+    ensure_dir(args.output_path)
+
+    results_df_list = []
+    for path, name in zip(args.results_df_path_list, args.results_name_list, strict=True):
+        df = pd.read_csv(path)
+        df["name"] = name
+        results_df_list += [df]
+    df = pd.concat(results_df_list)
+
+    table1(df, args.output_path, "ade", name="withquery__table1")
+    table1(df, args.output_path, "ade_visible", name="withquery__table1")
+    figure1(df, args.output_path, name="withquery__figure1")
+    figure2(df, args.output_path, "ade", name="withquery__figure2")
+    figure2(df, args.output_path, "ade_visible", name="withquery__figure2")
+
+    # TODO Ad hoc fix: ADE only for non-query points
+    df.ade = df.ade * df.n_timesteps / (df.n_timesteps - 1)
+    df.ade_visible = df.ade_visible * df.n_timesteps_visible / (df.n_timesteps_visible - 1)
+    df.ade_visible_chain = df.ade_visible_chain * df.n_timesteps_visible_chain / (df.n_timesteps_visible_chain - 1)
+
+    table1(df, args.output_path, "ade", name="table1")
+    table1(df, args.output_path, "ade_visible", name="table1")
+    figure1(df, args.output_path, name="figure1")
+    figure1(df, args.output_path, name="log__figure1")
+    figure2(df, args.output_path, "ade", name="figure2")
+    figure2(df, args.output_path, "ade_visible", name="figure2")
+    figure2(df, args.output_path, "ade", log_y=True, name="log__figure2")
+    figure2(df, args.output_path, "ade_visible", log_y=True, name="log__figure2")

@@ -98,7 +98,7 @@ data`.
 
 ### 0. Set up a torrent client
 
-To download the [FlyingThings++
+To download the [FlyingThings
 dataset](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html),
 we need to have a torrent client. I will install `qBittorrent-nox`, a
 version of qBittorrent (Qt5 application) that does not require X and can
@@ -155,7 +155,7 @@ cd -
 ```
 
 Additionally, download the `RGB images (cleanpass) (WebP)` portion of
-the [FlyingThings++
+the [FlyingThings
 dataset](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html),
 using a torrent client. In case you will produce the trajectory and
 occlusion data yourself, then you also need to download `Optical flow`
@@ -400,6 +400,14 @@ points/trajectories instead of 768:
 python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128
 ```
 
+If training crashes, you can continue for example as:
+```bash
+python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128 \
+  --init_dir "logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_15:22:55" \
+  --load_optimizer True \
+  --load_step True
+```
+
 ## Reproduce Paper Numbers
 
 ### Evaluating the Provided Checkpoint
@@ -485,7 +493,34 @@ python test_on_badja.py --modeltype='raft'
 
 ## Plot Precision Plots
 
-`TODO`
+I will create more verbose summaries and figures to better inspect the
+performance the different methods and better compare them.
+
+For this, I first create and save evaluation summaries to disk:
+```bash
+python test_on_flt.py --modeltype='pips'
+# logs_test_on_flt/1_8_16_pips_flt_10:48:30/results_df.csv
+
+python test_on_flt.py --modeltype='raft'
+# logs_test_on_flt/1_8_16_raft_flt_02:04:56/results_df.csv
+
+python test_on_flt.py --modeltype='dino'
+# logs_test_on_flt/1_8_16_dino_flt_02:03:12/results_df.csv
+```
+
+With the `csv` results dataframes ready, I will now run the creation of
+the figures and other summaries:
+```bash
+python -m pips_utils.figures \
+  --results_df_path_list \
+  logs_test_on_flt/1_8_16_pips_flt_10:48:30/results_df.csv \
+  logs_test_on_flt/1_8_16_raft_flt_02:04:56/results_df.csv \
+  logs_test_on_flt/1_8_16_dino_flt_02:03:12/results_df.csv \
+  --results_name_list \
+  PIPs \
+  RAFT \
+  DINO
+```
 
 ## Plot Dataset Annotations
 

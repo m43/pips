@@ -29,7 +29,7 @@ import saverloader
 from flyingthingsdataset import FlyingThingsDataset
 from nets.pips import Pips
 from nets.raftnet import Raftnet
-from pips_utils.figures import figure1, compute_summary_df
+from pips_utils.figures import compute_summary_df, figure1, figure2
 from pips_utils.util import ensure_dir
 
 device = 'cuda'
@@ -296,6 +296,12 @@ def main(
     results_df = compute_summary_df(results_list)
     results_df.to_csv(results_df_path)
     print(f"\nResults summary dataframe saved to:\n{results_df_path}\n")
+
+    figures_dir = os.path.join(log_dir, model_name, "figures")
+    ensure_dir(figures_dir)
+    results_df["name"] = modeltype
+    figure1(results_df, figures_dir)
+    figure2(results_df, figures_dir)
 
 
 if __name__ == '__main__':
