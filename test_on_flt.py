@@ -11,6 +11,8 @@ python test_on_flt.py --modeltype dino --seed 123 --N 64
 ```
 """
 import datetime
+import os
+import pickle
 import random
 import time
 
@@ -27,6 +29,8 @@ import saverloader
 from flyingthingsdataset import FlyingThingsDataset
 from nets.pips import Pips
 from nets.raftnet import Raftnet
+from pips_utils.figures import figure1, compute_summary_df
+from pips_utils.util import ensure_dir
 
 device = 'cuda'
 random.seed(125)
@@ -44,18 +48,20 @@ def run_for_sample(modeltype, model, d, sw):
     B, S, C, H, W = rgbs.shape
     _, _, N, D = trajs_gt.shape
 
+    assert D == 2
+    assert C == 3
+
     assert rgbs.shape == (B, S, C, H, W)
     assert occs.shape == (B, S, 1, H, W)
     assert masks.shape == (B, S, 1, H, W)
-    assert trajs_gt.shape == (B, S, N, 2)
+    assert trajs_gt.shape == (B, S, N, D)
     assert vis_gt.shape == (B, S, N)
     assert valids.shape == (B, S, N)
 
-    assert (C == 3)
     assert (torch.sum(valids) == B * S * N)
 
     # compute per-sequence visibility labels
-    vis_gt = (torch.sum(vis_gt, dim=1, keepdim=True) >= 4).float().repeat(1, S, 1)
+    good_visibility_mask = (torch.sum(vis_gt, dim=1, keepdim=True) >= 4).float().repeat(1, S, 1)
 
     if modeltype == 'pips':
         preds, preds_anim, vis_e, stats = model(trajs_gt[:, 0], rgbs, iters=6, trajs_g=trajs_gt, vis_g=vis_gt,
@@ -96,14 +102,20 @@ def run_for_sample(modeltype, model, d, sw):
     ate = torch.norm(trajs_pred - trajs_gt, dim=-1)
     assert ate.shape == (B, S, N)
     ate_all = pips_utils.basic.reduce_masked_mean(ate, valids)
-    ate_vis = pips_utils.basic.reduce_masked_mean(ate, valids * vis_gt)
-    ate_occ = pips_utils.basic.reduce_masked_mean(ate, valids * (1.0 - vis_gt))
+    ate_vis = pips_utils.basic.reduce_masked_mean(ate, valids * good_visibility_mask)
+    ate_occ = pips_utils.basic.reduce_masked_mean(ate, valids * (1.0 - good_visibility_mask))
 
     results = {
-        'ate_all': ate_all.item(),
-        'ate_vis': ate_vis.item(),
-        'ate_occ': ate_occ.item(),
+        "ate_all": ate_all.item(),
+        "ate_vis": ate_vis.item(),
+        "ate_occ": ate_occ.item(),
+        "B": B, "S": S, "C": C, "H": H, "W": W, "N": N, "D": D,
+        "trajectory_gt": trajs_gt.detach().clone().cpu(),
+        "trajectory_pred": trajs_pred.detach().clone().cpu(),
+        "valids": valids.detach().clone().cpu(),
+        "visibility_gt": vis_gt.detach().clone().cpu(),
     }
+    assert valids.all().item(), "FlyingThings++ always has all points valid"
 
     if sw is not None and sw.save_this:
         sw.summ_traj2ds_on_rgbs('inputs_0/orig_trajs_on_rgbs', trajs_gt, pips_utils.improc.preprocess_color(rgbs),
@@ -120,7 +132,8 @@ def run_for_sample(modeltype, model, d, sw):
                                    torch.ones_like(rgbs[0:1, 0]) * -0.5, cmap='winter', frame_id=results['ate_all'],
                                    only_return=True, linewidth=2))
 
-        sw.summ_traj2ds_on_rgb('outputs/single_trajs_on_gt_rgb', trajs_pred[0:1], gt_rgb[0:1], cmap='spring', linewidth=2)
+        sw.summ_traj2ds_on_rgb('outputs/single_trajs_on_gt_rgb', trajs_pred[0:1], gt_rgb[0:1], cmap='spring',
+                               linewidth=2)
         sw.summ_traj2ds_on_rgb('outputs/single_trajs_on_gt_black', trajs_pred[0:1], gt_black[0:1], cmap='spring',
                                linewidth=2)
 
@@ -170,7 +183,7 @@ def main(
     model_name = model_name + '_' + model_date
     print('model_name', model_name)
 
-    writer_t = SummaryWriter(log_dir + '/' + model_name + '/t', max_queue=10, flush_secs=60)
+    writer_t = SummaryWriter(os.path.join(log_dir, model_name, "t"), max_queue=10, flush_secs=60)
 
     def worker_init_fn(worker_id):
         np.random.seed(np.random.get_state()[1][0] + worker_id)
@@ -189,8 +202,6 @@ def main(
         worker_init_fn=worker_init_fn,
         drop_last=True)
     test_iterloader = iter(test_dataloader)
-
-    global_step = 0
 
     if modeltype == 'pips':
         model = Pips(S=S, stride=stride).cuda()
@@ -213,8 +224,10 @@ def main(
 
     if max_iters == 0:
         max_iters = len(test_dataloader)
-    print('setting max_iters', max_iters)
-    
+    print(f'max_iters={max_iters}')
+
+    results_list = []
+    global_step = 0
     while global_step < max_iters:
         read_start_time = time.time()
         global_step += 1
@@ -239,24 +252,50 @@ def main(
         iter_start_time = time.time()
 
         with torch.no_grad():
-            results = run_for_sample(modeltype, model, sample, sw_t)
+            packed_results = run_for_sample(modeltype, model, sample, sw_t)
+            for b in range(packed_results["trajectory_gt"].shape[0]):
+                for n in range(packed_results["trajectory_gt"].shape[2]):
+                    results_list += [{
+                        "iter": global_step,
+                        "video_idx": b,
+                        "point_idx_in_video": n,
+                        "trajectory_gt": packed_results["trajectory_gt"][b, :, n, :],
+                        "trajectory_pred": packed_results["trajectory_pred"][b, :, n, :],
+                        "valids": packed_results["valids"][b, :, n],
+                        "visibility_gt": packed_results["visibility_gt"][b, :, n],
+                    }]
 
-        if results['ate_all'] > 0:
-            ate_all_pool_t.update([results['ate_all']])
-        if results['ate_vis'] > 0:
-            ate_vis_pool_t.update([results['ate_vis']])
-        if results['ate_occ'] > 0:
-            ate_occ_pool_t.update([results['ate_occ']])
+        if packed_results['ate_all'] > 0:
+            ate_all_pool_t.update([packed_results['ate_all']])
+        if packed_results['ate_vis'] > 0:
+            ate_vis_pool_t.update([packed_results['ate_vis']])
+        if packed_results['ate_occ'] > 0:
+            ate_occ_pool_t.update([packed_results['ate_occ']])
         sw_t.summ_scalar('pooled/ate_all', ate_all_pool_t.mean())
         sw_t.summ_scalar('pooled/ate_vis', ate_vis_pool_t.mean())
         sw_t.summ_scalar('pooled/ate_occ', ate_occ_pool_t.mean())
 
         iter_time = time.time() - iter_start_time
-        print('%s; step %06d/%d; rtime %.2f; itime %.2f, ate_vis = %.2f, ate_occ = %.2f' % (
-            model_name, global_step, max_iters, read_time, iter_time,
-            ate_vis_pool_t.mean(), ate_occ_pool_t.mean()))
+        print(
+            f'{model_name}'
+            f' step={global_step:06d}/{max_iters:d}'
+            f' readtime={read_time:>2.2f}'
+            f' itertime={iter_time:>2.2f}'
+            f' ate_all={ate_all_pool_t.mean():>2.2f}'
+            f' ate_vis={ate_vis_pool_t.mean():>2.2f}'
+            f' ate_occ={ate_occ_pool_t.mean():>2.2f}'
+        )
 
     writer_t.close()
+    results_list_pkl_path = os.path.join(log_dir, model_name, "results_list.pkl")
+    with open(results_list_pkl_path, "wb") as f:
+        print(f"\nResults pickle file saved to:\n{results_list_pkl_path}")
+        pickle.dump(results_list, f)
+
+    results_df_path = os.path.join(log_dir, model_name, "results_df.csv")
+    results_df = compute_summary_df(results_list)
+    results_df.to_csv(results_df_path)
+    print(f"\nResults summary dataframe saved to:\n{results_df_path}\n")
 
 
 if __name__ == '__main__':

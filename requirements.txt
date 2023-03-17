@@ -7,3 +7,5 @@ matplotlib==3.5.1
 protobuf==3.20.0
 fire==0.4.0
 moviepy==1.0.3
+pandas~=1.5.3
+seaborn~=0.12.2
