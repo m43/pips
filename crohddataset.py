@@ -126,11 +126,10 @@ def prep_sample(sample, N_max, S_stride=3, req_occlusion=False):
     seq_moving = motion > 150
     seq_vis_init = vislist[:2].sum(0) == 2
     seq_occlusion = vislist.sum(0) < 8
-    seq_visible = vislist.sum(0) == 8
     if req_occlusion:
         seq_valid = seq_present * seq_vis_init * seq_moving * seq_occlusion
     else:
-        seq_valid = seq_present * seq_vis_init * seq_moving * seq_visible
+        seq_valid = seq_present * seq_vis_init * seq_moving
     if seq_valid.sum() == 0:
         return None, True
 
