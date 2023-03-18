@@ -23,10 +23,9 @@ python chain_demo.py
 
 ## Run on Your Own Video
 
-Prepare a video of your own. For example, I will process the video I
-have downloaded from [this youtube
-video](https://www.youtube.com/watch?v=gqHy_trMnRk&ab_channel=cro3x3)
-and put it into `demo_images/ulaz_u_crnu_riku.mp4`:
+Prepare a video of your own. For example, I will process a few videos such as [this youtube
+video](https://www.youtube.com/watch?v=gqHy_trMnRk&ab_channel=cro3x3) that I have downloaded 
+and put into `demo_images/ulaz_u_crnu_riku.mp4`:
 
 ```bash
 video_to_images() {
@@ -46,7 +45,7 @@ video_to_images "./demo_images/frano.avi" "./demo_images/frano" 24
 video_to_images "./demo_images/slow.flv" "./demo_images/slow" 24
 ```
 
-I will select a smaller number of images to run with the chain_demo:
+I will select a subset of images to run with the chain_demo:
 
 ```bash
 select_images() {
@@ -66,7 +65,7 @@ select_images() {
 select_images "./demo_images/ulaz_u_crnu_riku" "./demo_images/ulaz_u_crnu_riku__selected" 504 630
 ```
 
-Run on your own video:
+Finally, run on your own video:
 
 ```bash
 python demo.py \
@@ -157,9 +156,9 @@ cd -
 Additionally, download the `RGB images (cleanpass) (WebP)` portion of
 the [FlyingThings
 dataset](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html),
-using a torrent client. In case you will produce the trajectory and
-occlusion data yourself, then you also need to download `Optical flow`
-and `Object segmentation`.
+using a torrent client. Also, download the `Object segmentation` data
+using wget. In case you will produce the trajectory and occlusion data
+yourself, then you also need to download the `Optical flow` data.
 
 The structure should look like this:
 
@@ -179,6 +178,13 @@ tree -L 3 data
 #     └── trajs_ad
 #         ├── TEST
 #         └── TRAIN
+
+du -sch data/flyingthings # To get a feeling about the size
+# 7.5G    data/flyingthings/frames_cleanpass_webp
+# 104G    data/flyingthings/object_index
+# 6.8G    data/flyingthings/occluders_al
+# 78G     data/flyingthings/trajs_ad
+# 196G    total
 ```
 
 _Nota bene_: the suffixes "ad" and "al" are dataset (pre)processing
@@ -319,20 +325,56 @@ tree -L 3 data
 #     └── HT21Labels
 #         ├── test
 #         └── train
+
+du -sch data/flyingthings data/head_tracking data/DAVIS data/badja_data
+# 196G    data/flyingthings
+# 4.5G    data/head_tracking
+# 7.1G    data/DAVIS
+# 554M    data/badja_data
 ```
 
-To make sure the data is downloaded and located correctly, you can run
+To make sure the data is downloaded and placed correctly, you can run
 the following evaluation commands, one for each dataset. The evaluation
 script will use the checkpoint saved in `reference_model` by default
-(e.g., the `reference_model/model-000200000.pth`). Using the provided
-checkpoint should give numbers close to those provided in the
-`README.md`. However, the numbers should not match those in the paper,
-since the checkpoint was improved since the paper's publication (by
-using a harder version of FlyingThings++ to train on).
+(e.g., the `reference_model/model-000200000.pth`).
 
 ```bash
 cd path/to/pips/project
 
+python test_on_flt.py
+python test_on_crohd.py
+python test_on_davis.py
+python test_on_badja.py
+```
+
+## Train
+
+I will train on 2 GPUs, a batch size of 2 instead of 4, and 128
+points/trajectories instead of 768:
+
+```bash
+python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128
+```
+
+If training crashes, you can continue for example as:
+```bash
+python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128 \
+  --init_dir "logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_15:22:55" \
+  --load_optimizer True \
+  --load_step True
+```
+
+## Reproduce Paper Numbers
+
+### Evaluating the Provided Checkpoint
+
+Using the provided checkpoint should give numbers close to those
+provided in the `README.md`. However, the numbers should not match those
+in the paper, since the checkpoint was improved since the paper's
+publication (by using a harder version of FlyingThings++ to train on).
+To reproduce the numbers run the following:
+
+```bash
 python test_on_flt.py
 # model_name 1_8_16_pips_flt_16:05:08
 # loading FlyingThingsDataset...found 2542 samples in data/flyingthings (d
@@ -346,15 +388,10 @@ python test_on_flt.py
 # 1_8_16_pips_flt_16:05:08; step 002540/2542; rtime 0.00; itime 0.11, ate_vis = 6.08, ate_occ = 19.36
 # 1_8_16_pips_flt_16:05:08; step 002541/2542; rtime 0.00; itime 0.11, ate_vis = 6.07, ate_occ = 19.36
 # 1_8_16_pips_flt_16:05:08; step 002542/2542; rtime 0.00; itime 0.11, ate_vis = 6.08, ate_occ = 19.35
+# TODO: re-evaluate
 
 python test_on_crohd.py
-# ...
-# 1_8_16_pips_occ_crohd_13:59:30; step 000234/237; rtime 0.07; itime 0.27; ate = 3.85; ate_pooled = 7.59
-# 1_8_16_pips_occ_crohd_13:59:30; step 000235/237; rtime 0.05; itime 0.26; ate = 39.14; ate_pooled = 7.73
-# 1_8_16_pips_occ_crohd_13:59:30; step 000236/237; rtime 0.12; itime 0.27; ate = 4.59; ate_pooled = 7.71
-# 1_8_16_pips_occ_crohd_13:59:30; step 000237/237; rtime 0.07; itime 0.27; ate = 7.64; ate_pooled = 7.71
-
-python test_on_davis.py
+# 1_8_128_pips_vis_crohd_20:27:19 step=000237/237 readtime=0.06 itertime=0.38 ate_all=4.86 ate_vis=4.82 ate_occ=11.79
 
 python test_on_badja.py
 # model_name 1_8_pips_badja_15:09:30
@@ -389,37 +426,7 @@ python test_on_badja.py
 # results ['76.4', '91.6', '87.2', '31.0', '46.0', '62.3', 'avg 65.7']
 # 1_8_pips_badja_15:09:30; step 000007/7; rtime 0.05; itime 20.42; horsejump-low; pck 61.3
 # results ['76.4', '91.6', '87.2', '31.0', '46.0', '62.3', '61.3', 'avg 65.1']
-```
-
-## Train
-
-I will train on 2 GPUs, a batch size of 2 instead of 4, and 128
-points/trajectories instead of 768:
-
-```bash
-python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128
-```
-
-If training crashes, you can continue for example as:
-```bash
-python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128 \
-  --init_dir "logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_15:22:55" \
-  --load_optimizer True \
-  --load_step True
-```
-
-## Reproduce Paper Numbers
-
-### Evaluating the Provided Checkpoint
-
-To simply reproduce the numbers for the checkpoint provided by the
-authors, run the following:
-
-```bash
-python test_on_flt.py
-python test_on_crohd.py
-python test_on_davis.py
-python test_on_badja.py
+# TODO: re-evaluate
 ```
 
 ### Evaluating the Trained Model
@@ -428,7 +435,7 @@ To evaluate the model we have trained, find the location of the relevant
 checkpoint and run:
 
 ```bash
-`TODO`
+`TODO: finish training`
 ```
 
 ### Evaluating Baselines
@@ -439,10 +446,10 @@ the paper for BADJA (table 4), but not for CroHD or FlyingThings++.
 Evaluate DINO, the checkpoint will be downloaded automatically:
 ```bash
 python test_on_flt.py   --modeltype='dino'
+# TODO: re-evaluate
 
 python test_on_crohd.py --modeltype='dino'
-
-python test_on_davis.py --modeltype='dino'
+# TODO: re-evaluate
 
 python test_on_badja.py --modeltype='dino'
 # 1_8_dino_badja_23:05:16; step 000001/7; rtime 7.42; itime 8.50; bear; pck 75.0
@@ -453,6 +460,7 @@ python test_on_badja.py --modeltype='dino'
 # 1_8_dino_badja_23:05:16; step 000006/7; rtime 1.01; itime 4.07; horsejump-high; pck 35.1
 # 1_8_dino_badja_23:05:16; step 000007/7; rtime 3.30; itime 4.72; horsejump-low; pck 56.0
 # results ['75.0', '59.2', '70.6', '10.3', '47.1', '35.1', '56.0', 'avg 50.5']
+# TODO: re-evaluate
 ```
 
 Evaluate RAFT, but first download a checkpoint from their
@@ -471,14 +479,10 @@ lss raft_ckpts
 # -rw-r--r--   21M   Jul 25 2020   raft-things.pth
 
 python test_on_flt.py   --modeltype='raft'
+# TODO: re-evaluate
 
 python test_on_crohd.py --modeltype='raft'
-# 1_8_16_raft_occ_crohd_23:31:16; step 000234/237; rtime 0.07; itime 2.45; ate = 3.82; ate_pooled = 13.12
-# 1_8_16_raft_occ_crohd_23:31:16; step 000235/237; rtime 0.07; itime 2.41; ate = 33.87; ate_pooled = 13.21
-# 1_8_16_raft_occ_crohd_23:31:16; step 000236/237; rtime 0.13; itime 2.40; ate = 4.56; ate_pooled = 13.17
-# 1_8_16_raft_occ_crohd_23:31:16; step 000237/237; rtime 0.07; itime 2.36; ate = 9.16; ate_pooled = 13.16
-
-python test_on_davis.py --modeltype='raft'
+# 1_8_128_raft_vis_crohd_20:27:19 step=000237/237 readtime=0.05 itertime=1.60 ate_all=8.23 ate_vis=8.20 ate_occ=15.24
 
 python test_on_badja.py --modeltype='raft'
 # 1_8_raft_badja_23:29:59; step 000001/7; rtime 5.83; itime 16.02; bear; pck 64.6
@@ -489,6 +493,7 @@ python test_on_badja.py --modeltype='raft'
 # 1_8_raft_badja_23:29:59; step 000006/7; rtime 0.06; itime 10.19; horsejump-high; pck 37.1
 # 1_8_raft_badja_23:29:59; step 000007/7; rtime 0.07; itime 10.16; horsejump-low; pck 29.3
 # results ['64.6', '65.6', '69.5', '13.8', '39.1', '37.1', '29.3', 'avg 45.6']
+# TODO: re-evaluate
 ```
 
 ## Plot Precision Plots
