@@ -496,6 +496,8 @@ python test_on_badja.py --modeltype='raft'
 I will create more verbose summaries and figures to better inspect the
 performance the different methods and better compare them.
 
+### FlyingThings++
+
 For this, I first create and save evaluation summaries to disk:
 ```bash
 python test_on_flt.py --modeltype='pips'
@@ -512,6 +514,7 @@ With the `csv` results dataframes ready, I will now run the creation of
 the figures and other summaries:
 ```bash
 python -m pips_utils.figures \
+  --mostly_visible_threshold 4 \
   --results_df_path_list \
   logs_test_on_flt/1_8_16_pips_flt_10:48:30/results_df.csv \
   logs_test_on_flt/1_8_16_raft_flt_02:04:56/results_df.csv \
@@ -520,6 +523,25 @@ python -m pips_utils.figures \
   PIPs \
   RAFT \
   DINO
+```
+
+### CroHD
+
+For CroHD, we evaluate on the same metrics and create the same plots as
+for FlytingThings++:
+```bash
+python test_on_crohd.py --modeltype='pips'
+python test_on_crohd.py --modeltype='raft'
+python test_on_crohd.py --modeltype='dino'
+
+python -m pips_utils.figures \
+  --mostly_visible_threshold 8 \
+  --results_df_path_list \
+  logs_test_on_crohd/1_8_128_pips_vis_crohd_20:27:19/results_df.csv \
+  logs_test_on_crohd/1_8_128_raft_vis_crohd_20:27:19/results_df.csv \
+  --results_name_list \
+  PIPs \
+  RAFT
 ```
 
 ## Plot Dataset Annotations

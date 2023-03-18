@@ -8,6 +8,7 @@ import pandas as pd
 import seaborn as sns
 import torch
 from matplotlib import pyplot as plt
+from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
 
 from pips_utils.util import get_str_formatted_time, ensure_dir
@@ -426,12 +427,78 @@ def table1(
     print()
 
 
+def table2(
+        df: pd.DataFrame,
+        output_path: str,
+        mostly_visible_threshold: int = 4,
+        add_legacy_metrics: bool = True,
+        create_heatmap: bool = True,
+        name: str = "table1"
+) -> None:
+    df = df.copy()
+    df_list = []
+
+    df_global_ade = df[["name", "ade", "ade_visible", "ade_occluded", "ade_visible_chain"]].groupby(["name"]).mean()
+    df_list += [df_global_ade]
+
+    for chain_length in [2, 4, 8]:
+        if chain_length not in df.n_timesteps_visible_chain.unique():
+            continue
+        df_chain_ade = df[df.n_timesteps_visible_chain == chain_length][["name", "ade_visible_chain"]].groupby(
+            ["name"]).mean().rename(columns={"ade_visible_chain": f"ade_visible_chain_{chain_length}"})
+        df_list += [df_chain_ade]
+
+    # Legacy metrics (reported in paper for FlyingThings++ with threshold 4 and for CroHD with threshold 8):
+    #    1. ADE of Mostly Visible Trajectories (reported as "Vis." in paper)
+    #    2. ADE of Mostly Occluded Trajectories (reported as "Occ." in paper)
+    # These legacy metrics were computed as the average of pre-iteration metrics
+    if add_legacy_metrics:
+        df["iter"] = df.idx.apply(lambda x: int(x.split("--")[0]))
+        df["mostly_visible"] = df.n_timesteps_visible >= mostly_visible_threshold
+        df_average_per_iter = df.groupby(["iter", "mostly_visible", "name"]).mean().reset_index()
+        df_mostly_visible_ade = df_average_per_iter[df_average_per_iter.mostly_visible][["name", "ade"]].groupby(
+            "name").mean().rename(columns={"ade": "ade_mostly_visible"})
+        df_mostly_occluded_ade = df_average_per_iter[~df_average_per_iter.mostly_visible][["name", "ade"]].groupby(
+            "name").mean().rename(columns={"ade": "ade_mostly_occluded"})
+        df_list += [df_mostly_visible_ade, df_mostly_occluded_ade]
+
+    table_df = df_list[0]
+    for df_i in df_list[1:]:
+        table_df = pd.merge(table_df, df_i, left_index=True, right_index=True)
+        assert len(table_df) == len(df_list[0])
+
+    table_df = table_df.sort_values("ade_visible", ascending=False)
+    table_df.to_csv(os.path.join(output_path, f"{name}_threshold-{mostly_visible_threshold}.csv"))
+
+    print(f"TABLE: '{name}'")
+    print(table_df)
+    print()
+
+    if create_heatmap:
+        fig, ax = plt.subplots(figsize=(7, 1.5 + 1 * len(table_df)))
+        fig.suptitle(name)
+        sns.heatmap(table_df, annot=True, linewidths=0.3, fmt=".2f", norm=LogNorm(vmin=3, vmax=80))
+        fig.autofmt_xdate()
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_path, f"{name}.png"))
+        plt.show()
+        plt.close()
+        plt.clf()
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--results_df_path_list", nargs='+', required=True,
                         help="List of paths to results dataframes of contining evaluation results of different runs.")
     parser.add_argument("--results_name_list", nargs='+', required=True,
                         help="List of names to be used to identify each run.")
+    parser.add_argument("--mostly_visible_threshold", type=int, default=4,
+                        help='Threshold used to define when a trajectory is "mostly visible" '
+                             'compared to being "mostly occluded". The trajectory is mostly visible '
+                             'if there is a number of visible points greater or equal to the threshold. '
+                             'Otherwise, it is considered as mostly occluded. '
+                             'This value was set to 4 for the FlyingThings++ dataset and to 8 for the CroHD dataset, '
+                             'in the numbers reported in the paper')
     parser.add_argument("--output_path", type=str, default=f"logs/figures/{get_str_formatted_time()}",
                         help="path to folder to save gifs to")
     args = parser.parse_args()
@@ -466,8 +533,10 @@ if __name__ == '__main__':
     df["ade_occluded"] = (df.ade * df.n_timesteps - df.ade_visible * df.n_timesteps_visible) / (
             df.n_timesteps - df.n_timesteps_visible)
 
-    table1(df, args.output_path, "ade", name="table1")
-    table1(df, args.output_path, "ade_visible", name="table1")
+    # table1(df, args.output_path, "ade", name="table1")
+    # table1(df, args.output_path, "ade_visible", name="table1")
+    table2(df, args.output_path, args.mostly_visible_threshold, name="table2")
+
     figure1(df, args.output_path, name="figure1")
     # figure1(df, args.output_path, name="log__figure1")
     # figure2(df, args.output_path, "ade", name="figure2")
