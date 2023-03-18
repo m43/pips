@@ -109,6 +109,48 @@ class CrohdDataset(torch.utils.data.Dataset):
     def __len__(self):
         return sum(self.subfolder_lens)
 
+
+def prep_sample(sample, N_max, S_stride=3, req_occlusion=False):
+    rgbs = sample['rgbs'].permute(0, 1, 4, 2, S_stride).float()[:, ::S_stride]  # (1, S, C, H, W) in 0-255
+    boxlist = sample['boxlist'][0].float()[::S_stride]  # (S, N, 4), N = n heads
+    xylist = sample['xylist'][0].float()[::S_stride]  # (S, N, 2)
+    scorelist = sample['scorelist'][0].float()[::S_stride]  # (S, N)
+    vislist = sample['vislist'][0].float()[::S_stride]  # (S, N)
+
+    S, N, _ = xylist.shape
+
+    # collect valid heads
+    scorelist_sum = scorelist.sum(0)  # (N)
+    seq_present = scorelist_sum == S
+    motion = torch.sqrt(torch.sum((xylist[1:] - xylist[:1]) ** 2, dim=2)).sum(0)  # (N)
+    seq_moving = motion > 150
+    seq_vis_init = vislist[:2].sum(0) == 2
+    seq_occlusion = vislist.sum(0) < 8
+    seq_visible = vislist.sum(0) == 8
+    if req_occlusion:
+        seq_valid = seq_present * seq_vis_init * seq_moving * seq_occlusion
+    else:
+        seq_valid = seq_present * seq_vis_init * seq_moving * seq_visible
+    if seq_valid.sum() == 0:
+        return None, True
+
+    kp_xys = xylist[:, seq_valid > 0].unsqueeze(0)
+    vis = vislist[:, seq_valid > 0].unsqueeze(0)
+
+    N = kp_xys.shape[2]
+    # print('N', N)
+    if N > N_max:
+        kp_xys = kp_xys[:, :, :N_max]
+        vis = vis[:, :, :N_max]
+
+    d = {
+        'rgbs': rgbs,  # B, S, C, H, W
+        'trajs_g': kp_xys,  # B, S, 2
+        'vis_g': vis,  # B, S
+    }
+    return d, False
+
+
 if __name__ == "__main__":
     B = 1
     S = 8
@@ -125,4 +167,3 @@ if __name__ == "__main__":
     train_iterloader = iter(train_dataloader)
 
     sample = next(train_iterloader)
-

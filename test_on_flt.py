@@ -18,6 +18,7 @@ import time
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from fire import Fire
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
@@ -37,28 +38,57 @@ random.seed(125)
 np.random.seed(125)
 
 
-def run_for_sample(modeltype, model, d, sw):
-    rgbs = d['rgbs'].cuda().float()
-    occs = d['occs'].cuda().float()
-    masks = d['masks'].cuda().float()
-    trajs_gt = d['trajs'].cuda().float()
-    vis_gt = d['visibles'].cuda().float()
-    valids = d['valids'].cuda().float()
+def run_for_sample(modeltype, model, d, sw, dataset="flyingthings++"):
+    if dataset == "flyingthings++":
+        rgbs = d['rgbs'].cuda().float()
+        occs = d['occs'].cuda().float()
+        masks = d['masks'].cuda().float()
+        trajs_gt = d['trajs'].cuda().float()
+        vis_gt = d['visibles'].cuda().float()
+        valids = d['valids'].cuda().float()
 
-    B, S, C, H, W = rgbs.shape
-    _, _, N, D = trajs_gt.shape
+        B, S, C, H, W = rgbs.shape
+        _, _, N, D = trajs_gt.shape
 
-    assert D == 2
-    assert C == 3
+        assert D == 2
+        assert C == 3
 
-    assert rgbs.shape == (B, S, C, H, W)
-    assert occs.shape == (B, S, 1, H, W)
-    assert masks.shape == (B, S, 1, H, W)
-    assert trajs_gt.shape == (B, S, N, D)
-    assert vis_gt.shape == (B, S, N)
-    assert valids.shape == (B, S, N)
+        assert rgbs.shape == (B, S, C, H, W)
+        assert occs.shape == (B, S, 1, H, W)
+        assert masks.shape == (B, S, 1, H, W)
+        assert trajs_gt.shape == (B, S, N, D)
+        assert vis_gt.shape == (B, S, N)
+        assert valids.shape == (B, S, N)
 
-    assert (torch.sum(valids) == B * S * N)
+        assert (torch.sum(valids) == B * S * N)
+
+    elif dataset == "crohd":
+        rgbs = d['rgbs'].cuda()
+        trajs_gt = d['trajs_g'].cuda()  # B,S,N,2
+        vis_gt = d['vis_g'].cuda()  # B,S,N
+        valids = torch.ones_like(vis_gt)  # B,S,N
+
+        B, S, C, H, W = rgbs.shape
+        B, S1, N, D = trajs_gt.shape
+
+        rgbs_ = rgbs.reshape(B * S, C, H, W)
+        if modeltype == "dino":
+            H_, W_ = 512, 768
+        else:
+            H_, W_ = 768, 1280
+
+        sy = H_ / H
+        sx = W_ / W
+        rgbs_ = F.interpolate(rgbs_, (H_, W_), mode='bilinear')
+        H, W = H_, W_
+        rgbs = rgbs_.reshape(B, S, C, H, W)
+        trajs_gt[:, :, :, 0] *= sx
+        trajs_gt[:, :, :, 1] *= sy
+
+        _, S, C, H, W = rgbs.shape
+
+    else:
+        raise ValueError(f"Invalid dataset given: `{dataset}`")
 
     # compute per-sequence visibility labels
     good_visibility_mask = (torch.sum(vis_gt, dim=1, keepdim=True) >= 4).float().repeat(1, S, 1)
@@ -237,7 +267,7 @@ def main(
             log_freq=log_freq,
             fps=5,
             scalar_freq=int(log_freq / 2),
-            just_gif=True
+            just_gif=True,
         )
 
         gotit = (False, False)
