@@ -1,5 +1,6 @@
 import argparse
 import os
+from collections import namedtuple
 from itertools import cycle
 from typing import Dict, List
 
@@ -255,6 +256,7 @@ def figure1(
         df: pd.DataFrame,
         output_path: str,
         log_y: bool = False,
+        save_pdf: bool = True,
         name: str = "figure1",
         title: str = rf"ADE per visible chain length (w/ 95\% CI)"
 ) -> None:
@@ -286,7 +288,8 @@ def figure1(
     ax.legend_.set_title(None)
     plt.tight_layout()
     plt.savefig(os.path.join(output_path, f"{name}.png"))
-    plt.savefig(os.path.join(output_path, f"PDF__{name}.pdf"))
+    if save_pdf:
+        plt.savefig(os.path.join(output_path, f"PDF__{name}.pdf"))
     plt.show()
     plt.close()
     plt.clf()
@@ -297,6 +300,7 @@ def figure2(
         output_path: str,
         ade_metric: str = "ade_visible",
         log_y: bool = False,
+        save_pdf: bool = True,
         name: str = "figure2",
         title: str = rf"ADE for mostly visible (w/ 95\% CI)"
 ) -> None:
@@ -348,7 +352,56 @@ def figure2(
         plt.yscale('log')
     plt.tight_layout()
     plt.savefig(os.path.join(output_path, f"{name}_{ade_metric}.png"))
-    plt.savefig(os.path.join(output_path, f"PDF__{name}_{ade_metric}.pdf"))
+    if save_pdf:
+        plt.savefig(os.path.join(output_path, f"PDF__{name}_{ade_metric}.pdf"))
+    plt.show()
+    plt.close()
+    plt.clf()
+
+
+def figure3(
+        df: pd.DataFrame,
+        output_path: str,
+        log_y: bool = False,
+        save_pdf: bool = True,
+        name: str = "figure3",
+        title: str = rf"ADE per number of visible points (w/ 95\% CI)"
+) -> None:
+    df = df.copy()
+    fig, ax = plt.subplots(figsize=(6, 4))
+    fig.suptitle(title)
+    MetricLabelStyle = namedtuple("MetricLabelStle", ["metric", "label", "style"])
+    metric_label_style_list = [MetricLabelStyle("ade", "ADE", "-"), MetricLabelStyle("ade_visible", "ADE Visible", ":")]
+    for metric_label_style in metric_label_style_list:
+        sns.lineplot(
+            df,
+            x="n_timesteps_visible",
+            y=metric_label_style.metric,
+            hue="name",
+            palette=cycle(["GoldenRod", "r", "forestgreen", "yellow"]),
+            linestyle=metric_label_style.style,
+            linewidth=2,
+            errorbar=("ci", 95),
+            markers=True,
+            dashes=False,
+            err_style="band",
+            alpha=1,
+            legend=metric_label_style.metric == "ade",
+            ax=ax,
+        )
+    texts = [t.get_text() for t in ax.get_legend().get_texts()] + [mls.label for mls in metric_label_style_list]
+    lines = ax.get_legend().get_lines() + [Line2D([0, 10], [0, 10], linewidth=2, color="black", linestyle=mls.style)
+                                           for mls in metric_label_style_list]
+    new_legend = plt.legend(lines, texts, loc="center left")
+    ax.add_artist(new_legend)
+    ax.set_xlabel(rf"number of visible points")
+    ax.set_ylabel(rf"ADE")
+    if log_y:
+        plt.yscale('log')
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_path, f"{name}.png"))
+    if save_pdf:
+        plt.savefig(os.path.join(output_path, f"PDF__{name}.pdf"))
     plt.show()
     plt.close()
     plt.clf()
@@ -364,11 +417,13 @@ def table1(
     mostly_visible_indices = df.n_timesteps_visible >= mostly_visible_threshold
     mostly_visible_ade_df = df[mostly_visible_indices][["name", ade_metric]].groupby("name").mean()
     mostly_occluded_ade_df = df[~mostly_visible_indices][["name", ade_metric]].groupby("name").mean().rename(
-        columns={ade_metric: ade_metric.replace("_visible", "") + "_occluded"})
+        columns={ade_metric: ade_metric + "_occluded"})
     table_df = pd.merge(mostly_visible_ade_df, mostly_occluded_ade_df, left_index=True, right_index=True)
     table_df = table_df.sort_values(ade_metric, ascending=False)
-    print(table_df)
     table_df.to_csv(os.path.join(output_path, f"{name}_threshold-{mostly_visible_threshold}_metric-{ade_metric}.csv"))
+    print(f"TABLE: '{name}' (metric={ade_metric})")
+    print(table_df)
+    print()
 
 
 if __name__ == '__main__':
@@ -389,25 +444,34 @@ if __name__ == '__main__':
     for path, name in zip(args.results_df_path_list, args.results_name_list, strict=True):
         df = pd.read_csv(path)
         df["name"] = name
+        print(f"Loaded results df with name `{name}` from path `{path}`.")
+        print(df.describe())
+        print()
         results_df_list += [df]
     df = pd.concat(results_df_list)
 
-    table1(df, args.output_path, "ade", name="withquery__table1")
-    table1(df, args.output_path, "ade_visible", name="withquery__table1")
-    figure1(df, args.output_path, name="withquery__figure1")
-    figure2(df, args.output_path, "ade", name="withquery__figure2")
-    figure2(df, args.output_path, "ade_visible", name="withquery__figure2")
+    # table1(df, args.output_path, "ade", name="withquery__table1")
+    # table1(df, args.output_path, "ade_visible", name="withquery__table1")
+    # figure1(df, args.output_path, name="withquery__figure1")
+    # figure2(df, args.output_path, "ade", name="withquery__figure2")
+    # figure2(df, args.output_path, "ade_visible", name="withquery__figure2")
+    # figure3(df, args.output_path, name="withquery__figure3")
 
     # TODO Ad hoc fix: ADE only for non-query points
     df.ade = df.ade * df.n_timesteps / (df.n_timesteps - 1)
     df.ade_visible = df.ade_visible * df.n_timesteps_visible / (df.n_timesteps_visible - 1)
     df.ade_visible_chain = df.ade_visible_chain * df.n_timesteps_visible_chain / (df.n_timesteps_visible_chain - 1)
 
+    # Compute `ade_occluded`
+    df["ade_occluded"] = (df.ade * df.n_timesteps - df.ade_visible * df.n_timesteps_visible) / (
+            df.n_timesteps - df.n_timesteps_visible)
+
     table1(df, args.output_path, "ade", name="table1")
     table1(df, args.output_path, "ade_visible", name="table1")
     figure1(df, args.output_path, name="figure1")
-    figure1(df, args.output_path, name="log__figure1")
-    figure2(df, args.output_path, "ade", name="figure2")
-    figure2(df, args.output_path, "ade_visible", name="figure2")
-    figure2(df, args.output_path, "ade", log_y=True, name="log__figure2")
-    figure2(df, args.output_path, "ade_visible", log_y=True, name="log__figure2")
+    # figure1(df, args.output_path, name="log__figure1")
+    # figure2(df, args.output_path, "ade", name="figure2")
+    # figure2(df, args.output_path, "ade_visible", name="figure2")
+    # figure2(df, args.output_path, "ade", log_y=True, name="log__figure2")
+    # figure2(df, args.output_path, "ade_visible", log_y=True, name="log__figure2")
+    figure3(df, args.output_path, name="figure3")
