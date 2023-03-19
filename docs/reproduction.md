@@ -23,9 +23,10 @@ python chain_demo.py
 
 ## Run on Your Own Video
 
-Prepare a video of your own. For example, I will process a few videos such as [this youtube
-video](https://www.youtube.com/watch?v=gqHy_trMnRk&ab_channel=cro3x3) that I have downloaded 
-and put into `demo_images/ulaz_u_crnu_riku.mp4`:
+Prepare a video of your own. For example, I will process a few videos
+such as [this youtube
+video](https://www.youtube.com/watch?v=gqHy_trMnRk&ab_channel=cro3x3)
+that I have downloaded and put into `demo_images/ulaz_u_crnu_riku.mp4`:
 
 ```bash
 video_to_images() {
@@ -357,6 +358,7 @@ python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=1
 ```
 
 If training crashes, you can continue for example as:
+
 ```bash
 python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128 \
   --init_dir "logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_15:22:55" \
@@ -365,6 +367,11 @@ python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=1
 ```
 
 ## Reproduce Paper Numbers
+
+The numbers reported in the paper are not all exactly reproducible as
+the evaluation was not seeded properly, but the resulting numbers are
+mostly close. However, All numbers reported in this document should be
+exactly reproducible.
 
 ### Evaluating the Provided Checkpoint
 
@@ -384,14 +391,12 @@ python test_on_flt.py
 # ...found checkpoint reference_model/model-000200000.pth
 # setting max_iters 2542
 # ...
-# 1_8_16_pips_flt_16:05:08; step 002539/2542; rtime 0.00; itime 0.11, ate_vis = 6.08, ate_occ = 19.36
-# 1_8_16_pips_flt_16:05:08; step 002540/2542; rtime 0.00; itime 0.11, ate_vis = 6.08, ate_occ = 19.36
-# 1_8_16_pips_flt_16:05:08; step 002541/2542; rtime 0.00; itime 0.11, ate_vis = 6.07, ate_occ = 19.36
-# 1_8_16_pips_flt_16:05:08; step 002542/2542; rtime 0.00; itime 0.11, ate_vis = 6.08, ate_occ = 19.35
-# TODO: re-evaluate
+# 1_8_16_pips_flt_13:59:12 step=002542/2542 readtime=0.00 itertime=0.11 ate_all=8.68 ate_vis=6.04 ate_occ=19.43
+# logs_test_on_flt/1_8_16_pips_flt_13:59:12/results_df.csv
 
 python test_on_crohd.py
 # 1_8_128_pips_vis_crohd_20:27:19 step=000237/237 readtime=0.06 itertime=0.38 ate_all=4.86 ate_vis=4.82 ate_occ=11.79
+# logs_test_on_crohd/1_8_128_pips_vis_crohd_20:27:19/results_df.csv
 
 python test_on_badja.py
 # model_name 1_8_pips_badja_15:09:30
@@ -426,30 +431,44 @@ python test_on_badja.py
 # results ['76.4', '91.6', '87.2', '31.0', '46.0', '62.3', 'avg 65.7']
 # 1_8_pips_badja_15:09:30; step 000007/7; rtime 0.05; itime 20.42; horsejump-low; pck 61.3
 # results ['76.4', '91.6', '87.2', '31.0', '46.0', '62.3', '61.3', 'avg 65.1']
-# TODO: re-evaluate
 ```
 
 ### Evaluating the Trained Model
 
 To evaluate the model we have trained, find the location of the relevant
-checkpoint and run:
+checkpoint and run the commands below. Note that I trained for only
+61000 steps instead of 200000, so the results are somewhat subpar to the
+original model, but still quite close.
 
 ```bash
-`TODO: finish training`
+python test_on_flt.py --init_dir logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_18:11:24
+# 1_8_16_pips_flt_14:36:26 step=002542/2542 readtime=0.00 itertime=0.11 ate_all=13.72 ate_vis=9.85 ate_occ=30.20
+# logs_test_on_flt/1_8_16_pips_flt_14:36:26/results_df.csv
+
+python test_on_crohd.py --init_dir logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_18:11:24
+# 1_8_128_pips_vis_crohd_14:13:01 step=000237/237 readtime=0.12 itertime=0.42 ate_all=5.33 ate_vis=5.30 ate_occ=11.79
+# logs_test_on_crohd/1_8_128_pips_vis_crohd_14:13:01/results_df.csv
+
+python test_on_badja.py --init_dir logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_18:11:24
+# results ['73.2', '80.1', '81.6', '27.6', '43.1', '53.0', '57.1', 'avg 59.4']
 ```
 
 ### Evaluating Baselines
 
 Evaluating the baselines will exactly reproduce the numbers reported in
-the paper for BADJA (table 4), but not for CroHD or FlyingThings++.
+the paper for BADJA (table 4), but not for CroHD or FlyingThings++. The
+numbers reported in this document should be reproduced.
 
 Evaluate DINO, the checkpoint will be downloaded automatically:
+
 ```bash
 python test_on_flt.py   --modeltype='dino'
-# TODO: re-evaluate
+# 1_8_16_dino_flt_13:59:46 step=002542/2542 readtime=0.00 itertime=17.10 ate_all=48.68 ate_vis=43.00 ate_occ=76.05
+# logs_test_on_flt/1_8_16_dino_flt_13:59:46/results_df.csv
 
 python test_on_crohd.py --modeltype='dino'
-# TODO: re-evaluate
+# 1_8_128_dino_vis_crohd_14:00:12 step=000237/237 readtime=0.05 itertime=24.52 ate_all=22.80 ate_vis=22.76 ate_occ=29.68
+# logs_test_on_crohd/1_8_128_dino_vis_crohd_14:00:12/results_df.csv
 
 python test_on_badja.py --modeltype='dino'
 # 1_8_dino_badja_23:05:16; step 000001/7; rtime 7.42; itime 8.50; bear; pck 75.0
@@ -460,11 +479,11 @@ python test_on_badja.py --modeltype='dino'
 # 1_8_dino_badja_23:05:16; step 000006/7; rtime 1.01; itime 4.07; horsejump-high; pck 35.1
 # 1_8_dino_badja_23:05:16; step 000007/7; rtime 3.30; itime 4.72; horsejump-low; pck 56.0
 # results ['75.0', '59.2', '70.6', '10.3', '47.1', '35.1', '56.0', 'avg 50.5']
-# TODO: re-evaluate
 ```
 
 Evaluate RAFT, but first download a checkpoint from their
 [GitHub](https://github.com/princeton-vl/RAFT):
+
 ```bash
 wget https://www.dropbox.com/s/4j4z58wuv8o0mfz/models.zip
 unzip models.zip
@@ -479,10 +498,12 @@ lss raft_ckpts
 # -rw-r--r--   21M   Jul 25 2020   raft-things.pth
 
 python test_on_flt.py   --modeltype='raft'
-# TODO: re-evaluate
+# 1_8_16_raft_flt_14:03:32 step=002542/2542 readtime=0.00 itertime=1.15 ate_all=21.53 ate_vis=16.72 ate_occ=43.42
+# logs_test_on_flt/1_8_16_raft_flt_14:03:32/results_df.csv
 
 python test_on_crohd.py --modeltype='raft'
 # 1_8_128_raft_vis_crohd_20:27:19 step=000237/237 readtime=0.05 itertime=1.60 ate_all=8.23 ate_vis=8.20 ate_occ=15.24
+# logs_test_on_crohd/1_8_128_raft_vis_crohd_20:27:19/results_df.csv
 
 python test_on_badja.py --modeltype='raft'
 # 1_8_raft_badja_23:29:59; step 000001/7; rtime 5.83; itime 16.02; bear; pck 64.6
@@ -493,7 +514,6 @@ python test_on_badja.py --modeltype='raft'
 # 1_8_raft_badja_23:29:59; step 000006/7; rtime 0.06; itime 10.19; horsejump-high; pck 37.1
 # 1_8_raft_badja_23:29:59; step 000007/7; rtime 0.07; itime 10.16; horsejump-low; pck 29.3
 # results ['64.6', '65.6', '69.5', '13.8', '39.1', '37.1', '29.3', 'avg 45.6']
-# TODO: re-evaluate
 ```
 
 ## Plot Precision Plots
@@ -504,6 +524,7 @@ performance the different methods and better compare them.
 ### FlyingThings++
 
 For this, I first create and save evaluation summaries to disk:
+
 ```bash
 python test_on_flt.py --modeltype='pips'
 # logs_test_on_flt/1_8_16_pips_flt_10:48:30/results_df.csv
@@ -517,13 +538,14 @@ python test_on_flt.py --modeltype='dino'
 
 With the `csv` results dataframes ready, I will now run the creation of
 the figures and other summaries:
+
 ```bash
 python -m pips_utils.figures \
   --mostly_visible_threshold 4 \
   --results_df_path_list \
-  logs_test_on_flt/1_8_16_pips_flt_10:48:30/results_df.csv \
-  logs_test_on_flt/1_8_16_raft_flt_02:04:56/results_df.csv \
-  logs_test_on_flt/1_8_16_dino_flt_02:03:12/results_df.csv \
+  logs_test_on_flt/1_8_16_pips_flt_13:59:12/results_df.csv \
+  logs_test_on_flt/1_8_16_raft_flt_14:03:32/results_df.csv \
+  logs_test_on_flt/1_8_16_dino_flt_13:59:46/results_df.csv \
   --results_name_list \
   PIPs \
   RAFT \
@@ -534,6 +556,7 @@ python -m pips_utils.figures \
 
 For CroHD, we evaluate on the same metrics and create the same plots as
 for FlytingThings++:
+
 ```bash
 python test_on_crohd.py --modeltype='pips'
 python test_on_crohd.py --modeltype='raft'
@@ -544,15 +567,9 @@ python -m pips_utils.figures \
   --results_df_path_list \
   logs_test_on_crohd/1_8_128_pips_vis_crohd_20:27:19/results_df.csv \
   logs_test_on_crohd/1_8_128_raft_vis_crohd_20:27:19/results_df.csv \
+  logs_test_on_crohd/1_8_128_dino_vis_crohd_14:00:12/results_df.csv \
   --results_name_list \
   PIPs \
-  RAFT
+  RAFT \
+  DINO
 ```
-
-## Plot Dataset Annotations
-
-`TODO`
-
-## Identifying Failure Cases
-
-`TODO`
