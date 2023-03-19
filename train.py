@@ -1,15 +1,13 @@
 import time
 import numpy as np
-import timeit
 import saverloader
 from nets.pips import Pips
 import pips_utils.improc
 import random
-from pips_utils.basic import print_, print_stats
-import flyingthingsdataset
+from pips_utils.basic import print_
+from datasets import flyingthingsdataset
 import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 import torch.nn.functional as F
 from fire import Fire

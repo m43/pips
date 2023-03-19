@@ -1,17 +1,14 @@
 import time
 import numpy as np
-import timeit
 import saverloader
 from nets.raftnet import Raftnet
 from nets.pips import Pips
 import random
-from pips_utils.basic import print_, print_stats
 import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 import torch.nn.functional as F
-from badjadataset import BadjaDataset
+from datasets.badjadataset import BadjaDataset
 import pips_utils.basic
 import pips_utils.improc
 import pips_utils.test
@@ -384,7 +381,6 @@ def norm_mask(mask):
     return mask
 
 def run_dino(dino, d, sw):
-    import copy
     metrics = {}
 
     file0 = str(d['file0'])
@@ -553,8 +549,6 @@ def main(
 ):
     # the idea in this file is to evaluate on keypoint propagation in BADJA
 
-    init_dir = './reference_model'
-    
     assert(modeltype=='pips' or modeltype=='raft' or modeltype=='dino')
     
     ## autogen a name

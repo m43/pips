@@ -27,7 +27,7 @@ import pips_utils.basic
 import pips_utils.improc
 import pips_utils.test
 import saverloader
-from flyingthingsdataset import FlyingThingsDataset
+from datasets.flyingthingsdataset import FlyingThingsDataset
 from nets.pips import Pips
 from nets.raftnet import Raftnet
 from pips_utils.figures import compute_summary_df, figure1, figure2
