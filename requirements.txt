@@ -10,3 +10,7 @@ moviepy==1.0.3
 pandas~=1.5.3
 seaborn~=0.12.2
 kubric==0.1.1
+mediapy~=1.1.6
+ffmpeg~=1.4
+ffmpeg-python~=0.2.0
+git+https://github.com/google-research/kubric.git@5173c46101ab509d6d05964c0a1fc9fc2f40a947
