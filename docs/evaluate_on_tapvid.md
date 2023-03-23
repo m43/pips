@@ -66,3 +66,33 @@ tree -L 2
 #     └── tapvid_rgb_stacking.pkl
 ```
 
+## Visualize the Dataset
+
+To visualize the dataset, you could run:
+```bash
+cd /path/to/pips
+python3 -m pips_utils.visualize_tap \
+  --input_path=<path_to_pickle_file.pkl> \
+  --output_path=<path_to_output_video.mp4> \
+  --alsologtostderr
+
+# Examples:
+python3 -m pips_utils.visualize_tapvid \
+  --input_path=data/tapvid_davis/tapvid_davis.pkl \
+  --output_path=logs/visualizations/tapvid_davis.mp4 \
+  --alsologtostderr
+python3 -m pips_utils.visualize_tapvid \
+  --input_path=data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl \
+  --output_path=logs/visualizations/tapvid_rgb_stacking.mp4 \
+  --alsologtostderr
+python3 -m pips_utils.visualize_tapvid \
+  --input_path=data/tapvid_kinetics/0009_of_0010.pkl \
+  --output_path=logs/visualizations/tapvid_kinetics__0009_of_0010.mp4 \
+  --alsologtostderr
+```
+
+For visualization examples, you can see the following:
+- [TAP-Vid-DAVIS](https://storage.googleapis.com/dm-tapnet/content/davis_ground_truth_v2.html)
+- [TAP-Vid-Kubric](https://storage.googleapis.com/dm-tapnet/content/kubric_ground_truth.html)
+- [TAP-Vid-RGB-Stacking](https://storage.googleapis.com/dm-tapnet/content/rgb_stacking_ground_truth_v2.html)
+
