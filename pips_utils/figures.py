@@ -2,8 +2,9 @@ import argparse
 import os
 from collections import namedtuple
 from itertools import cycle
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
+import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
@@ -74,7 +75,7 @@ def average_displacement_error(trajectory_a: torch.Tensor, trajectory_b: torch.T
 
 
 def extract_visible_trajectory(trajectory_a: torch.Tensor, trajectory_b: torch.Tensor,
-                               visibility: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+                               visibility: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Extracts the visible portion of two trajectory tensors according to a visibility mask.
 
@@ -91,7 +92,7 @@ def extract_visible_trajectory(trajectory_a: torch.Tensor, trajectory_b: torch.T
 
     Returns
     -------
-    tuple[torch.Tensor, torch.Tensor]
+    Tuple[torch.Tensor, torch.Tensor]
         A tuple of two 2D tensors representing the visible portion of the input trajectories.
         The output tensor shapes are (N, D), where N is the number of visible time steps
         and D is the number of dimensions.
@@ -108,7 +109,7 @@ def extract_visible_trajectory(trajectory_a: torch.Tensor, trajectory_b: torch.T
 
 
 def extract_visible_trajectory_chain(trajectory_a: torch.Tensor, trajectory_b: torch.Tensor,
-                                     visibility: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+                                     visibility: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Extracts the visible portion of two trajectory tensors according to a visibility mask.
 
@@ -223,6 +224,17 @@ def compute_summary(results: Dict) -> Dict:
         "n_timesteps_visible": len(traj_gt_visible),
         "n_timesteps_visible_chain": len(traj_gt_visible_chain),
     }
+    from datasets.tapvid_evaluation_datasets import compute_tapvid_metrics
+    tapvid_metrics = compute_tapvid_metrics(
+        query_points=np.array([[[0, results["trajectory_gt"][0, 0], results["trajectory_gt"][0, 1]]]]),
+        gt_occluded=~results["visibility_gt"][None, None, :].numpy(),
+        gt_tracks=results["trajectory_gt"][None, None, :, :].numpy(),
+        pred_occluded=0 * results["visibility_gt"][None, None, :].numpy(),  # TODO Save vis preds during eval, for pips
+        pred_tracks=results["trajectory_pred"][None, None, :, :].numpy(),
+        query_mode="first",
+    )
+    tapvid_metrics = {k: v.item() for k, v in tapvid_metrics.items()}
+    summary.update(tapvid_metrics)
     return summary
 
 
@@ -471,7 +483,7 @@ def table2(
     table_df.to_csv(os.path.join(output_path, f"{name}_threshold-{mostly_visible_threshold}.csv"))
 
     print(f"TABLE: '{name}'")
-    print(table_df)
+    print(table_df.to_markdown())
     print()
 
     if create_heatmap:
@@ -484,6 +496,36 @@ def table2(
         plt.show()
         plt.close()
         plt.clf()
+
+
+def make_figures(df, output_path, mostly_visible_threshold):
+    # table1(df, output_path, "ade", name="withquery__table1")
+    # table1(df, output_path, "ade_visible", name="withquery__table1")
+    # figure1(df, output_path, name="withquery__figure1")
+    # figure2(df, output_path, "ade", name="withquery__figure2")
+    # figure2(df, output_path, "ade_visible", name="withquery__figure2")
+    # figure3(df, output_path, name="withquery__figure3")
+
+    # TODO Ad hoc fix: ADE only for non-query points
+    df.ade = df.ade * df.n_timesteps / (df.n_timesteps - 1)
+    df.ade_visible = df.ade_visible * df.n_timesteps_visible / (df.n_timesteps_visible - 1)
+    df.ade_visible_chain = df.ade_visible_chain * df.n_timesteps_visible_chain / (df.n_timesteps_visible_chain - 1)
+
+    # Compute `ade_occluded`
+    df["ade_occluded"] = (df.ade * df.n_timesteps - df.ade_visible * df.n_timesteps_visible) / (
+            df.n_timesteps - df.n_timesteps_visible)
+
+    # table1(df, output_path, "ade", name="table1")
+    # table1(df, output_path, "ade_visible", name="table1")
+    table2(df, output_path, mostly_visible_threshold, name="table2")
+
+    figure1(df, output_path, name="figure1")
+    # figure1(df, output_path, name="log__figure1")
+    # figure2(df, output_path, "ade", name="figure2")
+    # figure2(df, output_path, "ade_visible", name="figure2")
+    # figure2(df, output_path, "ade", log_y=True, name="log__figure2")
+    # figure2(df, output_path, "ade_visible", log_y=True, name="log__figure2")
+    figure3(df, output_path, name="figure3")
 
 
 if __name__ == '__main__':
@@ -517,30 +559,4 @@ if __name__ == '__main__':
         results_df_list += [df]
     df = pd.concat(results_df_list)
 
-    # table1(df, args.output_path, "ade", name="withquery__table1")
-    # table1(df, args.output_path, "ade_visible", name="withquery__table1")
-    # figure1(df, args.output_path, name="withquery__figure1")
-    # figure2(df, args.output_path, "ade", name="withquery__figure2")
-    # figure2(df, args.output_path, "ade_visible", name="withquery__figure2")
-    # figure3(df, args.output_path, name="withquery__figure3")
-
-    # TODO Ad hoc fix: ADE only for non-query points
-    df.ade = df.ade * df.n_timesteps / (df.n_timesteps - 1)
-    df.ade_visible = df.ade_visible * df.n_timesteps_visible / (df.n_timesteps_visible - 1)
-    df.ade_visible_chain = df.ade_visible_chain * df.n_timesteps_visible_chain / (df.n_timesteps_visible_chain - 1)
-
-    # Compute `ade_occluded`
-    df["ade_occluded"] = (df.ade * df.n_timesteps - df.ade_visible * df.n_timesteps_visible) / (
-            df.n_timesteps - df.n_timesteps_visible)
-
-    # table1(df, args.output_path, "ade", name="table1")
-    # table1(df, args.output_path, "ade_visible", name="table1")
-    table2(df, args.output_path, args.mostly_visible_threshold, name="table2")
-
-    figure1(df, args.output_path, name="figure1")
-    # figure1(df, args.output_path, name="log__figure1")
-    # figure2(df, args.output_path, "ade", name="figure2")
-    # figure2(df, args.output_path, "ade_visible", name="figure2")
-    # figure2(df, args.output_path, "ade", log_y=True, name="log__figure2")
-    # figure2(df, args.output_path, "ade_visible", log_y=True, name="log__figure2")
-    figure3(df, args.output_path, name="figure3")
+    make_figures(df, args.output_path, args.mostly_visible_threshold)

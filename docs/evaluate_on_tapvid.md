@@ -96,3 +96,70 @@ For visualization examples, you can see the following:
 - [TAP-Vid-Kubric](https://storage.googleapis.com/dm-tapnet/content/kubric_ground_truth.html)
 - [TAP-Vid-RGB-Stacking](https://storage.googleapis.com/dm-tapnet/content/rgb_stacking_ground_truth_v2.html)
 
+## Evaluate models on TAP-Vid
+
+Let's first evaluate RAFT on the dataset to try to reproducing some of
+the numbers reported in the TAP-Vid paper.
+
+```bash
+python test_on_flt.py \
+  --modeltype raft \
+  --dataset_type tapvid \
+  --dataset_location data/tapvid_davis/tapvid_davis.pkl \
+  --exp_name tapvid_davis \
+  --subset davis \
+  --dataloader_workers 2
+# 1_8_None_raft_tapvid_debug_17:24:03 step=000238/238 readtime=0.00 itertime=1.21 ate_all=15.88 ate_vis=12.79 ate_occ=130.60
+# logs/1_8_None_raft_tapvid_debug_17:24:03/results_df.csv
+
+python test_on_flt.py \
+  --modeltype raft \
+  --dataset_type tapvid \
+  --dataset_location data/tapvid_kinetics \
+  --exp_name tapvid_kinetics \
+  --subset kinetics \
+  --dataloader_workers 2
+
+python test_on_flt.py \
+  --modeltype raft \
+  --dataset_type tapvid \
+  --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl \
+  --exp_name tapvid_rgb_stacking \
+  --subset kubric \
+  --dataloader_workers 2
+```
+
+How about pips?
+
+```bash
+python test_on_flt.py \
+  --modeltype pips \
+  --dataset_type tapvid \
+  --dataset_location data/tapvid_davis/tapvid_davis.pkl \
+  --exp_name tapvid_davis \
+  --subset davis \
+  --dataloader_workers 2
+# Results summary dataframe saved to:
+# logs/1_8_None_pips_tapvid_davis_17:45:33/results_df.csv
+# 
+# TABLE: 'table2'
+# | name   |     ade |   ade_visible |   ade_occluded |   ade_visible_chain |   ade_visible_chain_2 |   ade_visible_chain_4 |   ade_visible_chain_8 |   ade_mostly_visible |   ade_mostly_occluded |
+# |:-------|--------:|--------------:|---------------:|--------------------:|----------------------:|----------------------:|----------------------:|---------------------:|----------------------:|
+# | pips   | 12.4085 |       3.05335 |        205.119 |              2.9095 |               3.74382 |                4.8304 |               2.70431 |              10.8371 |               147.742 |
+
+python test_on_flt.py \
+  --modeltype pips \
+  --dataset_type tapvid \
+  --dataset_location data/tapvid_kinetics \
+  --exp_name tapvid_kinetics \
+  --subset kinetics \
+  --dataloader_workers 2
+
+python test_on_flt.py \
+  --modeltype pips \
+  --dataset_type tapvid \
+  --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl \
+  --exp_name tapvid_rgb_stacking \
+  --subset kubric \
+  --dataloader_workers 2
+```

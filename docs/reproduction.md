@@ -2,13 +2,29 @@
 
 ## Environment Setup
 
-I will use conda:
+I will use conda to manage the environment.
+
+You might need to first install OpenEXR if you do not have it.
+It is needed to build the `tensorflow_graphics` package,
+used when generating the TAP-Vid kubric dataset.
+
+For using visualizations tools from the `TAP-Vid` dataset,
+you also need to install ffmpeg,
+for example using `sudo apt install ffmpeg`.
 
 ```bash
 conda create --name pips python=3.10 -y
-source activate pips
+conda activate pips
 conda install pytorch=1.12.0 torchvision=0.13.0 cudatoolkit=11.3 -c pytorch
+
+pip install --upgrade pip
+pip install packaging
 pip install -r requirements.txt
+
+git clone https://github.com/google-research/kubric.git
+cd kubric
+git checkout 5173c46101ab509d6d05964c0a1fc9fc2f40a947
+cd ..
 ```
 
 ## Run Provided Demo
@@ -342,7 +358,7 @@ script will use the checkpoint saved in `reference_model` by default
 ```bash
 cd path/to/pips/project
 
-python test_on_flt.py
+python test_on_flt.py --modeltype pips --exp_name flt --dataset_type flyingthings++ --dataset_location data/flyingthings --subset all --N 16
 python test_on_crohd.py
 python test_on_davis.py
 python test_on_badja.py
@@ -382,7 +398,13 @@ publication (by using a harder version of FlyingThings++ to train on).
 To reproduce the numbers run the following:
 
 ```bash
-python test_on_flt.py
+python test_on_flt.py \
+  --modeltype pips \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
 # model_name 1_8_16_pips_flt_16:05:08
 # loading FlyingThingsDataset...found 2542 samples in data/flyingthings (d
 # set=TEST, subset=all, version=ad)
@@ -441,7 +463,14 @@ checkpoint and run the commands below. Note that I trained for only
 original model, but still quite close.
 
 ```bash
-python test_on_flt.py --init_dir logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_18:11:24
+python test_on_flt.py \
+  --modeltype pips \
+  --init_dir logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_18:11:24 \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
 # 1_8_16_pips_flt_14:36:26 step=002542/2542 readtime=0.00 itertime=0.11 ate_all=13.72 ate_vis=9.85 ate_occ=30.20
 # logs_test_on_flt/1_8_16_pips_flt_14:36:26/results_df.csv
 
@@ -462,7 +491,13 @@ numbers reported in this document should be reproduced.
 Evaluate DINO, the checkpoint will be downloaded automatically:
 
 ```bash
-python test_on_flt.py   --modeltype='dino'
+python test_on_flt.py \
+  --modeltype dino \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
 # 1_8_16_dino_flt_13:59:46 step=002542/2542 readtime=0.00 itertime=17.10 ate_all=48.68 ate_vis=43.00 ate_occ=76.05
 # logs_test_on_flt/1_8_16_dino_flt_13:59:46/results_df.csv
 
@@ -497,7 +532,13 @@ lss raft_ckpts
 # -rw-rw-r--  3.9M   Aug 24 2020   raft-small.pth
 # -rw-r--r--   21M   Jul 25 2020   raft-things.pth
 
-python test_on_flt.py   --modeltype='raft'
+python test_on_flt.py \
+  --modeltype raft \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
 # 1_8_16_raft_flt_14:03:32 step=002542/2542 readtime=0.00 itertime=1.15 ate_all=21.53 ate_vis=16.72 ate_occ=43.42
 # logs_test_on_flt/1_8_16_raft_flt_14:03:32/results_df.csv
 
@@ -526,13 +567,31 @@ performance the different methods and better compare them.
 For this, I first create and save evaluation summaries to disk:
 
 ```bash
-python test_on_flt.py --modeltype='pips'
+python test_on_flt.py \
+  --modeltype pips \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
 # logs_test_on_flt/1_8_16_pips_flt_10:48:30/results_df.csv
 
-python test_on_flt.py --modeltype='raft'
+python test_on_flt.py \
+  --modeltype raft \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
 # logs_test_on_flt/1_8_16_raft_flt_02:04:56/results_df.csv
 
-python test_on_flt.py --modeltype='dino'
+python test_on_flt.py \
+  --modeltype dino \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
 # logs_test_on_flt/1_8_16_dino_flt_02:03:12/results_df.csv
 ```
 

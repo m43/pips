@@ -1,8 +1,6 @@
 """
 Evaluate on Head Tracking in CroHD. Supports evaluating PIPs, RAFT, and DINO.
 
-PIPs vis: 4.57, PIPs occ: 7.71 TODO: numbers not verified
-
 Examples of usage:
 ```bash
 python test_on_flt.py
@@ -141,7 +139,7 @@ def main(
         iter_start_time = time.time()
 
         with torch.no_grad():
-            packed_results = run_for_sample(modeltype, model, sample, sw_t, dataset="crohd")
+            packed_results = run_for_sample(modeltype, model, sample, sw_t, dataset="crohd", mostly_visible_threshold=8)
             for b in range(packed_results["trajectory_gt"].shape[0]):
                 for n in range(packed_results["trajectory_gt"].shape[2]):
                     results_list += [{

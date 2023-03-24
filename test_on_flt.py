@@ -25,12 +25,15 @@ from torch.utils.data import DataLoader
 
 import pips_utils.basic
 import pips_utils.improc
+import pips_utils.misc
+import pips_utils.samp
 import pips_utils.test
 import saverloader
 from datasets.flyingthingsdataset import FlyingThingsDataset
+from datasets.tapviddataset import TAPVidDataset
 from nets.pips import Pips
 from nets.raftnet import Raftnet
-from pips_utils.figures import compute_summary_df, figure1, figure2
+from pips_utils.figures import compute_summary_df, make_figures
 from pips_utils.util import ensure_dir
 
 device = 'cuda'
@@ -38,7 +41,7 @@ random.seed(125)
 np.random.seed(125)
 
 
-def run_for_sample(modeltype, model, d, sw, dataset="flyingthings++"):
+def run_for_sample(modeltype, model, d, sw, dataset="flyingthings++", mostly_visible_threshold=4):
     if dataset == "flyingthings++":
         rgbs = d['rgbs'].cuda().float()
         occs = d['occs'].cuda().float()
@@ -87,11 +90,29 @@ def run_for_sample(modeltype, model, d, sw, dataset="flyingthings++"):
 
         _, S, C, H, W = rgbs.shape
 
+    elif dataset == "tapvid":
+        rgbs = d["rgbs"].cuda()
+        rgbs = (rgbs + 1) * 255 / 2  # Rescale from [-1,1] to [0,255]
+        trajs_gt = d["trajectories"].cuda()
+        vis_gt = d["visibility"].cuda()
+        valids = torch.ones_like(vis_gt)
+
+        B, S, C, H, W = rgbs.shape
+        _, _, N, D = trajs_gt.shape
+
+        assert C == 3
+        assert D == 2
+
+        assert rgbs.shape == (B, S, C, H, W)
+        assert trajs_gt.shape == (B, S, N, D)
+        assert vis_gt.shape == (B, S, N)
+        assert valids.shape == (B, S, N)
+
     else:
         raise ValueError(f"Invalid dataset given: `{dataset}`")
 
     # compute per-sequence visibility labels
-    good_visibility_mask = (torch.sum(vis_gt, dim=1, keepdim=True) >= 4).float().repeat(1, S, 1)
+    good_visibility_mask = (torch.sum(vis_gt, dim=1, keepdim=True) >= mostly_visible_threshold).float().repeat(1, S, 1)
 
     if modeltype == 'pips':
         preds, preds_anim, vis_e, stats = model(trajs_gt[:, 0], rgbs, iters=6, trajs_g=trajs_gt, vis_g=vis_gt,
@@ -181,22 +202,26 @@ def run_for_sample(modeltype, model, d, sw, dataset="flyingthings++"):
 
 
 def main(
-        exp_name='flt',
+        exp_name,
+        dataset_type,
+        dataset_location,
+        subset='all',
+        mostly_visible_threshold=4,
         B=1,
         S=8,
-        N=16,
+        N=None,
         modeltype='pips',
         init_dir='reference_model',
         stride=4,
-        log_dir='logs_test_on_flt',
-        dataset_location='data/flyingthings',
-        max_iters=0,  # auto-select based on dataset
-        log_freq=100,
+        max_iters=-1,
+        log_freq=50,
+        dataloader_workers=20,
         shuffle=False,
-        subset='all',
+        log_dir='logs',
+        seed=72,
+        # FlyingThings++ specific
         crop_size=(384, 512),  # the raw data is 540,960
         use_augs=False,
-        seed=72,
 ):
     random.seed(seed)
     np.random.seed(seed)
@@ -205,7 +230,7 @@ def main(
 
     assert (modeltype == 'pips' or modeltype == 'raft' or modeltype == 'dino')
 
-    model_name = f"{B:d}_{S:d}_{N:d}_{modeltype:s}"
+    model_name = f"{B:d}_{S:d}_{N}_{modeltype:s}"
     if use_augs:
         model_name += "_A"
     model_name += f"_{exp_name:s}"
@@ -215,23 +240,35 @@ def main(
 
     writer_t = SummaryWriter(os.path.join(log_dir, model_name, "t"), max_queue=10, flush_secs=60)
 
+    if dataset_type == "flyingthings++":
+        dataset = FlyingThingsDataset(
+            dataset_location=dataset_location,
+            dset='TEST', subset=subset,
+            use_augs=use_augs,
+            N=N, S=S,
+            crop_size=crop_size,
+        )
+
+    elif dataset_type == "tapvid":
+        dataset = TAPVidDataset(dataset_location, subset, S)
+
+    elif dataset_type == "crohd":
+        raise NotImplementedError()
+
+    else:
+        raise ValueError(f"Invalid dataset type given: `{dataset_type}`")
+
     def worker_init_fn(worker_id):
         np.random.seed(np.random.get_state()[1][0] + worker_id)
 
-    test_dataset = FlyingThingsDataset(
-        dataset_location=dataset_location,
-        dset='TEST', subset=subset,
-        use_augs=use_augs,
-        N=N, S=S,
-        crop_size=crop_size)
     test_dataloader = DataLoader(
-        test_dataset,
+        dataset,
         batch_size=B,
         shuffle=shuffle,
-        num_workers=24,
+        num_workers=dataloader_workers,
         worker_init_fn=worker_init_fn,
-        drop_last=True)
-    test_iterloader = iter(test_dataloader)
+        drop_last=True,
+    )
 
     if modeltype == 'pips':
         model = Pips(S=S, stride=stride).cuda()
@@ -252,14 +289,14 @@ def main(
     ate_vis_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
     ate_occ_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
 
-    if max_iters == 0:
+    if max_iters == -1 and hasattr(test_dataloader, '__len__'):
         max_iters = len(test_dataloader)
     print(f'max_iters={max_iters}')
 
     results_list = []
     global_step = 0
-    while global_step < max_iters:
-        read_start_time = time.time()
+    read_start_time = time.time()
+    for sample in test_dataloader:
         global_step += 1
         sw_t = pips_utils.improc.Summ_writer(
             writer=writer_t,
@@ -270,22 +307,14 @@ def main(
             just_gif=True,
         )
 
-        gotit = (False, False)
-        while not all(gotit):
-            try:
-                sample, gotit = next(test_iterloader)
-            except StopIteration:
-                test_iterloader = iter(test_dataloader)
-                sample, gotit = next(test_iterloader)
-
         read_time = time.time() - read_start_time
         iter_start_time = time.time()
 
         with torch.no_grad():
-            packed_results = run_for_sample(modeltype, model, sample, sw_t)
+            packed_results = run_for_sample(modeltype, model, sample, sw_t, dataset_type, mostly_visible_threshold)
             for b in range(packed_results["trajectory_gt"].shape[0]):
                 for n in range(packed_results["trajectory_gt"].shape[2]):
-                    results_list += [{
+                    result = {
                         "iter": global_step,
                         "video_idx": b,
                         "point_idx_in_video": n,
@@ -293,7 +322,8 @@ def main(
                         "trajectory_pred": packed_results["trajectory_pred"][b, :, n, :],
                         "valids": packed_results["valids"][b, :, n],
                         "visibility_gt": packed_results["visibility_gt"][b, :, n],
-                    }]
+                    }
+                    results_list += [result]
 
         if packed_results['ate_all'] > 0:
             ate_all_pool_t.update([packed_results['ate_all']])
@@ -315,6 +345,7 @@ def main(
             f' ate_vis={ate_vis_pool_t.mean():>2.2f}'
             f' ate_occ={ate_occ_pool_t.mean():>2.2f}'
         )
+        read_start_time = time.time()
 
     writer_t.close()
     results_list_pkl_path = os.path.join(log_dir, model_name, "results_list.pkl")
@@ -330,8 +361,8 @@ def main(
     figures_dir = os.path.join(log_dir, model_name, "figures")
     ensure_dir(figures_dir)
     results_df["name"] = modeltype
-    figure1(results_df, figures_dir)
-    figure2(results_df, figures_dir)
+
+    make_figures(results_df, figures_dir, mostly_visible_threshold)
 
 
 if __name__ == '__main__':
