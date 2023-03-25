@@ -114,6 +114,7 @@ def compute_tapvid_metrics(
     pred_occluded: np.ndarray,
     pred_tracks: np.ndarray,
     query_mode: str,
+    additional_pck_thresholds: Iterable[float] = (),
 ) -> Mapping[str, np.ndarray]:
   """Computes TAP-Vid metrics (Jaccard, Pts. Within Thresh, Occ. Acc.)
 
@@ -155,6 +156,8 @@ def compute_tapvid_metrics(
         threshold
       average_pts_within_thresh: average across pts_within_{x}
       average_jaccard: average across jaccard_{x}
+      additional_pck_thresholds: additional thresholds that will result in
+        pts_within_{x} for x in additional_pck_thresholds
 
   """
 
@@ -209,8 +212,8 @@ def compute_tapvid_metrics(
     count_visible_points = np.sum(
         visible & evaluation_points, axis=(1, 2))
     frac_correct = count_correct / count_visible_points
-    metrics['pts_within_' + str(thresh)] = frac_correct
-    all_frac_within.append(frac_correct)
+    metrics['pts_within_' + str(thresh)] = frac_correct * 100
+    all_frac_within.append(frac_correct * 100)
 
     true_positives = np.sum(
         is_correct & pred_visible & evaluation_points, axis=(1, 2))
@@ -231,6 +234,14 @@ def compute_tapvid_metrics(
     jaccard = true_positives / (gt_positives + false_positives)
     metrics['jaccard_' + str(thresh)] = jaccard
     all_jaccard.append(jaccard)
+  for thresh in additional_pck_thresholds:
+    within_dist = np.sum(np.square(pred_tracks - gt_tracks), axis=-1) < np.square(thresh)
+    is_correct = np.logical_and(within_dist, visible)
+    count_correct = np.sum(is_correct & evaluation_points, axis=(1, 2))
+    count_visible_points = np.sum(visible & evaluation_points, axis=(1, 2))
+    frac_correct = count_correct / count_visible_points
+    metrics['pts_within_' + str(thresh)] = frac_correct * 100
+
   metrics['average_jaccard'] = np.mean(
       np.stack(all_jaccard, axis=1),
       axis=1,

@@ -1,5 +1,7 @@
 import argparse
+import math
 import os
+import pickle
 from collections import namedtuple
 from itertools import cycle
 from typing import Dict, List, Tuple
@@ -184,6 +186,12 @@ def compute_summary(results: Dict) -> Dict:
         - 'n_timesteps': The length of the trajectory.
         - 'n_timesteps_visible': The number of visible points in the ground-truth trajectory.
         - 'n_timesteps_visible_chain': The number of visible points in the ground-truth trajectory, assuming a chain structure.
+        - 'occlusion_accuracy': TODO
+        - 'jaccard_i': TODO for i in [1,2,4,8,16]
+        - 'average_jaccard': TODO
+        - 'pts_within_i': PCK with a threshold of 'i' that does not scale the threshold relative to a body
+           (e.g., a human), but measures in pixels. Computed for i in [1, 2, 4, 8, 16]
+        - 'average_pts_within_thresh': The average of 'pts_within_i', for all i.
 
     Examples
     --------
@@ -194,7 +202,7 @@ def compute_summary(results: Dict) -> Dict:
     ...     'valids': torch.tensor([True, True, True]),
     ...     'trajectory_gt': torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]),
     ...     'trajectory_pred': torch.tensor([[0.0, 0.0], [2.0, 2.0], [3.0, 3.0]]),
-    ...     'visibility_gt': torch.tensor([1, 1, 0])
+    ...     'visibility_gt': torch.tensor([True, True, False])
     ... }
     >>> compute_summary(results)
     {
@@ -204,7 +212,20 @@ def compute_summary(results: Dict) -> Dict:
         'ade_visible_chain': 0.7071067690849304,
         'n_timesteps': 3,
         'n_timesteps_visible': 2,
-        'n_timesteps_visible_chain': 2
+        'n_timesteps_visible_chain': 2,
+        'occlusion_accuracy': 0.5,  # TODO dummy
+        'jaccard_1': 0.0,  # TODO dummy
+        'jaccard_2': 0.5,  # TODO dummy
+        'jaccard_4': 0.5,  # TODO dummy
+        'jaccard_8': 0.5,  # TODO dummy
+        'jaccard_16': 0.5,  # TODO dummy
+        'average_jaccard': 0.4,  # TODO dummy
+        'pts_within_1': 0.0,
+        'pts_within_2': 1.0,
+        'pts_within_4': 1.0,
+        'pts_within_8': 1.0,
+        'pts_within_16': 1.0,
+        'average_pts_within_thresh': 0.8
     }
     """
     assert results["valids"].all(), "Assume all points are valid for each timestep"
@@ -215,6 +236,7 @@ def compute_summary(results: Dict) -> Dict:
     traj_gt_visible_chain, traj_pred_visible_chain = extract_visible_trajectory_chain(traj_gt, traj_pred, vis_gt)
     assert vis_gt.sum() == len(traj_gt_visible)
     assert vis_gt.sum() >= len(traj_gt_visible_chain)
+
     summary = {
         "idx": f'{results["iter"]}--{results["video_idx"]}--{results["point_idx_in_video"]}',
         "ade": average_displacement_error(traj_gt, traj_pred),
@@ -224,6 +246,8 @@ def compute_summary(results: Dict) -> Dict:
         "n_timesteps_visible": len(traj_gt_visible),
         "n_timesteps_visible_chain": len(traj_gt_visible_chain),
     }
+
+    # TODO consider rescaling the images/trajectories to 256x256
     from datasets.tapvid_evaluation_datasets import compute_tapvid_metrics
     tapvid_metrics = compute_tapvid_metrics(
         query_points=np.array([[[0, results["trajectory_gt"][0, 0], results["trajectory_gt"][0, 1]]]]),
@@ -232,8 +256,15 @@ def compute_summary(results: Dict) -> Dict:
         pred_occluded=0 * results["visibility_gt"][None, None, :].numpy(),  # TODO Save vis preds during eval, for pips
         pred_tracks=results["trajectory_pred"][None, None, :, :].numpy(),
         query_mode="first",
+        additional_pck_thresholds=[
+            0.01, 0.05,
+            *[0.1 * (i + 1) for i in range(10)],
+            *[(i + 1) for i in range(10)],
+            # 15, 20, 50, 100, 256,
+        ],
     )
     tapvid_metrics = {k: v.item() for k, v in tapvid_metrics.items()}
+
     summary.update(tapvid_metrics)
     return summary
 
@@ -247,22 +278,70 @@ def compute_summary_df(results_list: List[Dict]) -> pd.DataFrame:
                                    returned by the compute_summary function.
 
     Returns:
-        summary_df (pd.DataFrame): a dataframe containing the following columns:
-            - 'idx' (str): a unique identifier for each trajectory.
-            - 'ade' (float): the average displacement error between the ground truth and predicted trajectories.
-            - 'ade_visible' (float): the average displacement error between the visible parts
-                                     of the ground truth and predicted trajectories.
-            - 'ade_visible_chain' (float): the average displacement error between the visible trajectory chains
-                                           of the ground truth and predicted trajectories.
-            - 'n_timesteps' (int): the length of the trajectory.
-            - 'n_timesteps_visible' (int): the number of visible points in the ground truth trajectory.
-            - 'n_timesteps_visible_chain' (int): the number of visible points in the visible trajectory chain
-                                       of the ground truth trajectory.
+        summary_df (pd.DataFrame): a dataframe containing the metrics returned by <see cref="compute_summary">,
+                                   with the metrics being the columns (e.g., 'idx' (str), 'ade' (float),
+                                   'n_timesteps' (int), etc.)
     """
     summaries = []
     for results in results_list:
         summaries += [compute_summary(results)]
     return pd.DataFrame.from_records(summaries)
+
+
+def compute_summary_df_for_batched_results(results_list, batch_size=4096, drop_last=False):
+    """
+    Compute a summary dataframe for a list of results. The results will be grouped into batches of given batch size.
+    A summary will be computed for each batch. If the last batch does not have `batch_size` elements, then it will be
+    dropped if `drop_last` is set to `True`. All summaries are returned in a dataframe.
+
+    Parameters:
+    -----------
+    results_list : list
+        A list of results.
+    batch_size : int, optional
+        The size of each batch.
+    drop_last : bool, optional
+        Whether to drop the last batch if it does not contain `batch_size` elements.
+
+    Returns:
+    --------
+    df_batched : pandas DataFrame
+        A dataframe of summaries computed using <see cref=compute_summary_df>.
+    """
+    # TODO: Consider if we want to drop the last element, or compute a weighted averaging
+    if drop_last:
+        n_batches = math.floor(len(results_list) / batch_size)
+    else:
+        n_batches = math.ceil(len(results_list) / batch_size)
+
+    results_batched_list = []
+    for batch_idx in range(n_batches):
+        batch = results_list[batch_idx * batch_size:(batch_idx + 1) * batch_size]
+        results_batched_list += [{
+            'iter': 'batch',
+            'video_idx': 'batch',
+            'point_idx_in_video': 'batch',
+            'trajectory_gt': torch.concat([r["trajectory_gt"] for r in batch]),
+            'trajectory_pred': torch.concat([r["trajectory_pred"] for r in batch]),
+            'valids': torch.concat([r["valids"] for r in batch]),
+            'visibility_gt': torch.concat([r["visibility_gt"] for r in batch]),
+        }]
+
+        stride = results_list[0]['trajectory_gt'].shape[0]
+        assert len(results_batched_list[batch_idx]["trajectory_gt"]) == len(
+            results_batched_list[batch_idx]["valids"]) == stride * len(batch)
+
+    df_batched = compute_summary_df(results_batched_list)
+
+    # TODO: Chain metrics are not computed correctly for batched results, thus I put a warning number.
+    #       This is because the current chain metrics assume that the first point is the start of the chain,
+    #       but in the merged batch results, the query points are not only the first points, but are distributed
+    #       throughout the batch.
+    for col in df_batched.columns:
+        if "chain" in str(col).lower():
+            df_batched[col] = df_batched[col].apply(lambda x: np.nan)
+
+    return df_batched
 
 
 def figure1(
@@ -420,6 +499,52 @@ def figure3(
     plt.clf()
 
 
+def figure4(
+        df: pd.DataFrame,
+        output_path: str,
+        log_y: bool = False,
+        save_pdf: bool = True,
+        name: str = "figure4",
+        title: str = rf"PCK per threshold across scenes (w/ 95\% CI)"
+) -> None:
+    df = df.copy()
+
+    pts_cols = [c for c in df.columns if c.startswith("pts_within_")]
+    df = df[["name"] + pts_cols]
+    df = df.melt("name", var_name="threshold", value_name="pts_within_threshold")
+    df.threshold = df.threshold.apply(lambda x: float(x.replace("pts_within_", "")))
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    fig.suptitle(title)
+    sns.lineplot(
+        df,
+        x="threshold",
+        y="pts_within_threshold",
+        hue="name",
+        palette=cycle(["GoldenRod", "r", "forestgreen", "yellow"]),
+        linestyle="-",
+        linewidth=2,
+        errorbar=("ci", 95),
+        markers=True,
+        dashes=False,
+        err_style="bars",
+        alpha=1,
+        legend=True,
+        ax=ax,
+    )
+    ax.set_xlabel(rf"threshold in pixels")
+    ax.set_ylabel(rf"PCK")
+    if log_y:
+        plt.yscale('log')
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_path, f"{name}.png"))
+    if save_pdf:
+        plt.savefig(os.path.join(output_path, f"PDF__{name}.pdf"))
+    plt.show()
+    plt.close()
+    plt.clf()
+
+
 def table1(
         df: pd.DataFrame,
         output_path: str,
@@ -444,8 +569,9 @@ def table2(
         output_path: str,
         mostly_visible_threshold: int = 4,
         add_legacy_metrics: bool = True,
+        add_tapvid_metrics: bool = True,
         create_heatmap: bool = True,
-        name: str = "table1"
+        name: str = "table2-selected-metrics"
 ) -> None:
     df = df.copy()
     df_list = []
@@ -474,6 +600,11 @@ def table2(
             "name").mean().rename(columns={"ade": "ade_mostly_occluded"})
         df_list += [df_mostly_visible_ade, df_mostly_occluded_ade]
 
+    if add_tapvid_metrics:
+        df_tapvid_metrics = df[["name", "pts_within_1", "pts_within_2", "pts_within_4", "pts_within_8", "pts_within_16",
+                                "average_pts_within_thresh"]].groupby(["name"]).mean()
+        df_list += [df_tapvid_metrics]
+
     table_df = df_list[0]
     for df_i in df_list[1:]:
         table_df = pd.merge(table_df, df_i, left_index=True, right_index=True)
@@ -483,11 +614,11 @@ def table2(
     table_df.to_csv(os.path.join(output_path, f"{name}_threshold-{mostly_visible_threshold}.csv"))
 
     print(f"TABLE: '{name}'")
-    print(table_df.to_markdown())
+    print(table_df.transpose().to_markdown())
     print()
 
     if create_heatmap:
-        fig, ax = plt.subplots(figsize=(7, 1.5 + 1 * len(table_df)))
+        fig, ax = plt.subplots(figsize=(12, 1.5 + 1 * len(table_df)))
         fig.suptitle(name)
         sns.heatmap(table_df, annot=True, linewidths=0.3, fmt=".2f", norm=LogNorm(vmin=3, vmax=80))
         fig.autofmt_xdate()
@@ -498,7 +629,51 @@ def table2(
         plt.clf()
 
 
-def make_figures(df, output_path, mostly_visible_threshold):
+def table3(
+        df: pd.DataFrame,
+        output_path: str,
+        create_heatmap: bool = True,
+        name: str = "table3-batched-metrics"
+) -> None:
+    df = df.copy()
+    table_df = df[["name", "ade_visible", "ade_occluded",
+                   "pts_within_0.01", "pts_within_0.1", "pts_within_0.5",
+                   "pts_within_1", "pts_within_2", "pts_within_4", "pts_within_8", "pts_within_16",
+                   "average_pts_within_thresh"]].groupby(["name"]).mean()
+
+    table_df = table_df.sort_values("ade_visible", ascending=False)
+    table_df.to_csv(os.path.join(output_path, f"{name}.csv"))
+
+    print(f"TABLE: '{name}'")
+    print(table_df.transpose().to_markdown())
+    print()
+
+    if create_heatmap:
+        fig, ax = plt.subplots(figsize=(6, 1.5 + 1 * len(table_df)))
+        fig.suptitle(name)
+        sns.heatmap(table_df, annot=True, linewidths=0.3, fmt=".2f", norm=LogNorm(vmin=1, vmax=100))
+        fig.autofmt_xdate()
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_path, f"{name}.png"))
+        plt.show()
+        plt.close()
+        plt.clf()
+
+
+def ad_hoc_ade_fix(df):
+    # TODO Ad hoc fix: ADE only for non-query points
+    df.ade = df.ade * df.n_timesteps / (df.n_timesteps - 1)
+    df.ade_visible = df.ade_visible * df.n_timesteps_visible / (df.n_timesteps_visible - 1)
+    df.ade_visible_chain = df.ade_visible_chain * df.n_timesteps_visible_chain / (df.n_timesteps_visible_chain - 1)
+
+
+def add_ade_occluded_to_df(df):
+    df["ade_occluded"] = (df.ade * df.n_timesteps - df.ade_visible * df.n_timesteps_visible) / (
+            df.n_timesteps - df.n_timesteps_visible)
+
+
+def make_figures(df, output_path, mostly_visible_threshold, df_batched=None):
+    df = df.copy()
     # table1(df, output_path, "ade", name="withquery__table1")
     # table1(df, output_path, "ade_visible", name="withquery__table1")
     # figure1(df, output_path, name="withquery__figure1")
@@ -506,18 +681,12 @@ def make_figures(df, output_path, mostly_visible_threshold):
     # figure2(df, output_path, "ade_visible", name="withquery__figure2")
     # figure3(df, output_path, name="withquery__figure3")
 
-    # TODO Ad hoc fix: ADE only for non-query points
-    df.ade = df.ade * df.n_timesteps / (df.n_timesteps - 1)
-    df.ade_visible = df.ade_visible * df.n_timesteps_visible / (df.n_timesteps_visible - 1)
-    df.ade_visible_chain = df.ade_visible_chain * df.n_timesteps_visible_chain / (df.n_timesteps_visible_chain - 1)
-
-    # Compute `ade_occluded`
-    df["ade_occluded"] = (df.ade * df.n_timesteps - df.ade_visible * df.n_timesteps_visible) / (
-            df.n_timesteps - df.n_timesteps_visible)
+    ad_hoc_ade_fix(df)
+    add_ade_occluded_to_df(df)
 
     # table1(df, output_path, "ade", name="table1")
     # table1(df, output_path, "ade_visible", name="table1")
-    table2(df, output_path, mostly_visible_threshold, name="table2")
+    table2(df, output_path, mostly_visible_threshold, name="table2-selected-metrics")
 
     figure1(df, output_path, name="figure1")
     # figure1(df, output_path, name="log__figure1")
@@ -526,12 +695,25 @@ def make_figures(df, output_path, mostly_visible_threshold):
     # figure2(df, output_path, "ade", log_y=True, name="log__figure2")
     # figure2(df, output_path, "ade_visible", log_y=True, name="log__figure2")
     figure3(df, output_path, name="figure3")
+    figure4(df, output_path, name="figure4")
+
+    if df_batched is not None:
+        df_batched = df_batched.copy()
+        ad_hoc_ade_fix(df_batched)
+        add_ade_occluded_to_df(df_batched)
+        table3(df_batched, args.output_path, name="table3-tapvid-metrics-for-batched-df")
+        figure4(df_batched, output_path, name="figure4-batched-df")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--results_df_path_list", nargs='+', required=True,
-                        help="List of paths to results dataframes of contining evaluation results of different runs.")
+    parser.add_argument("--results_path_list", nargs='+', required=True,
+                        help="List of paths that point to either a precomputed dataframe stored in a CSV file or a "
+                             "raw evaluation result in a pickle file containing information such as trajectories and "
+                             "visibilities. CSV files are faster as they do not require any additional computation, "
+                             "while pickle files are generally larger and need to be computed to obtain the "
+                             "dataframe. For consistency in the computation of metrics, it is suggested to use either "
+                             "all pickle files or all dataframes.")
     parser.add_argument("--results_name_list", nargs='+', required=True,
                         help="List of names to be used to identify each run.")
     parser.add_argument("--mostly_visible_threshold", type=int, default=4,
@@ -545,18 +727,45 @@ if __name__ == '__main__':
                         help="path to folder to save gifs to")
     args = parser.parse_args()
 
-    assert len(args.results_df_path_list) == len(args.results_name_list)
+    assert len(args.results_path_list) == len(args.results_name_list)
     assert len(args.results_name_list) == len(set(args.results_name_list))
     ensure_dir(args.output_path)
 
     results_df_list = []
-    for path, name in zip(args.results_df_path_list, args.results_name_list, strict=True):
-        df = pd.read_csv(path)
+    batched_results_df_list = []
+    for path, name in zip(args.results_path_list, args.results_name_list, strict=True):
+        if path.endswith(".csv"):
+            df = pd.read_csv(path)
+        elif path.endswith(".pkl"):
+            with open(path, "rb") as f:
+                results_list = pickle.load(f)
+
+                print(f"*** Results dictionary for the first datapoint of {name}:")
+                for k, v in results_list[0].items():
+                    print(f"{k}: {v}")
+                print()
+                print(f"*** Summary metrics for the first datapoint of {name}:")
+                for k, v in compute_summary(results_list[0]).items():
+                    print(f"{k}: {v}")
+                print()
+
+                print(f"Recomputing summary for {name}...")
+                df = compute_summary_df(results_list)
+
+                print(f"Computing summary for batched results of {name}...")
+                df_batched = compute_summary_df_for_batched_results(results_list)
+                df_batched["name"] = name
+                batched_results_df_list += [df_batched]
+        else:
+            raise ValueError(f"The results path provided does not point to a `.csv` or `.pkl` file. "
+                             f"The given path was: `{path}`")
+
         df["name"] = name
         print(f"Loaded results df with name `{name}` from path `{path}`.")
-        print(df.describe())
+        print(df.describe().transpose())
         print()
         results_df_list += [df]
-    df = pd.concat(results_df_list)
 
-    make_figures(df, args.output_path, args.mostly_visible_threshold)
+    df = pd.concat(results_df_list)
+    df_batched = pd.concat(batched_results_df_list)
+    make_figures(df, args.output_path, args.mostly_visible_threshold, df_batched=df_batched)

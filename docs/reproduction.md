@@ -601,7 +601,7 @@ the figures and other summaries:
 ```bash
 python -m pips_utils.figures \
   --mostly_visible_threshold 4 \
-  --results_df_path_list \
+  --results_path_list \
   logs_test_on_flt/1_8_16_pips_flt_13:59:12/results_df.csv \
   logs_test_on_flt/1_8_16_raft_flt_14:03:32/results_df.csv \
   logs_test_on_flt/1_8_16_dino_flt_13:59:46/results_df.csv \
@@ -623,7 +623,7 @@ python test_on_crohd.py --modeltype='dino'
 
 python -m pips_utils.figures \
   --mostly_visible_threshold 8 \
-  --results_df_path_list \
+  --results_path_list \
   logs_test_on_crohd/1_8_128_pips_vis_crohd_20:27:19/results_df.csv \
   logs_test_on_crohd/1_8_128_raft_vis_crohd_20:27:19/results_df.csv \
   logs_test_on_crohd/1_8_128_dino_vis_crohd_14:00:12/results_df.csv \
