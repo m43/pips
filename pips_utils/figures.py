@@ -1,5 +1,4 @@
 import argparse
-import math
 import os
 import pickle
 from collections import namedtuple
@@ -110,10 +109,14 @@ def extract_visible_trajectory(trajectory_a: torch.Tensor, trajectory_b: torch.T
     return trajectory_a[visibility == 1], trajectory_b[visibility == 1]
 
 
-def extract_visible_trajectory_chain(trajectory_a: torch.Tensor, trajectory_b: torch.Tensor,
-                                     visibility: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+def extract_visible_trajectory_chain(
+        trajectory_a: torch.Tensor,
+        trajectory_b: torch.Tensor,
+        visibility: torch.Tensor,
+        query_point: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Extracts the visible portion of two trajectory tensors according to a visibility mask.
+    Extracts the visible portion of two trajectory tensors around the query point.
 
     Parameters
     ----------
@@ -125,6 +128,8 @@ def extract_visible_trajectory_chain(trajectory_a: torch.Tensor, trajectory_b: t
         where S is the number of time steps and D is the number of dimensions.
     visibility : torch.Tensor
         A 1D tensor representing the visibility of each time step. Its length should be S.
+    query_point : torch.Tensor
+        A 1D tensor representing the query point, (t,x,y). Its shape should be (D+1,).
 
     Returns
     -------
@@ -137,24 +142,37 @@ def extract_visible_trajectory_chain(trajectory_a: torch.Tensor, trajectory_b: t
     AssertionError
         If the visibility tensor is not a 1D tensor, or if it does not have the same length as
         the input trajectories.
-        If the visibility tensor indicates that the first time step is occluded.
 
     Examples
     --------
     >>> trajectory_a = torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     >>> trajectory_b = torch.tensor([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
     >>> visibility = torch.tensor([1, 1, 0])
-    >>> extract_visible_trajectory_chain(trajectory_a, trajectory_b, visibility)
+    >>> query_point = torch.tensor([0.0, 0.0, 0.0])
+    >>> extract_visible_trajectory_chain(trajectory_a, trajectory_b, visibility, query_point)
     (tensor([[0., 0.], [1., 1.]]), tensor([[1., 1.], [2., 2.]]))
     """
     assert visibility.ndim == 1, "Visibility tensor must be a 1D tensor"
     assert len(visibility) == len(trajectory_a) == len(trajectory_b), "Input tensors must have the same length"
+
+    t = query_point[0].item()
+    t = int(t)
+    assert visibility[t] == 1, "Query point must be visible"
+
     occluded_indices = (visibility == 0).nonzero()
-    if len(occluded_indices) > 0:
-        first_occluded_index = occluded_indices[0].item()
-        assert first_occluded_index != 0, "The first index must not be occluded"
-        trajectory_a = trajectory_a[:first_occluded_index]
-        trajectory_b = trajectory_b[:first_occluded_index]
+
+    occluded_indices_after_query_point = occluded_indices[occluded_indices > t]
+    if len(occluded_indices_after_query_point) > 0:
+        idx = occluded_indices_after_query_point[0].item()
+        trajectory_a = trajectory_a[:idx]
+        trajectory_b = trajectory_b[:idx]
+
+    occluded_indices_until_query_point = occluded_indices[occluded_indices < t]
+    if len(occluded_indices_until_query_point) > 0:
+        idx = occluded_indices_until_query_point[-1].item()
+        trajectory_a = trajectory_a[idx + 1:]
+        trajectory_b = trajectory_b[idx + 1:]
+
     return trajectory_a, trajectory_b
 
 
@@ -166,7 +184,6 @@ def compute_summary(results: Dict) -> Dict:
     ----------
     results : Dict
         A dictionary containing the trajectory prediction results. It should have the following keys:
-        - 'valids': A 1D boolean tensor indicating which points in the trajectory are valid.
         - 'trajectory_gt': A 2D tensor representing the ground-truth trajectory. Its shape should be (S, D),
           where S is the number of time steps and D is the number of dimensions.
         - 'trajectory_pred': A 2D tensor representing the predicted trajectory. Its shape should be (S, D),
@@ -199,7 +216,6 @@ def compute_summary(results: Dict) -> Dict:
     ...     'iter': 123,
     ...     'video_idx': 2,
     ...     'point_idx_in_video': 31,
-    ...     'valids': torch.tensor([True, True, True]),
     ...     'trajectory_gt': torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]),
     ...     'trajectory_pred': torch.tensor([[0.0, 0.0], [2.0, 2.0], [3.0, 3.0]]),
     ...     'visibility_gt': torch.tensor([True, True, False])
@@ -228,12 +244,15 @@ def compute_summary(results: Dict) -> Dict:
         'average_pts_within_thresh': 0.8
     }
     """
-    assert results["valids"].all(), "Assume all points are valid for each timestep"
     traj_gt = results["trajectory_gt"]
     traj_pred = results["trajectory_pred"]
     vis_gt = results["visibility_gt"]
+    query_point = results["query_point"]
+
     traj_gt_visible, traj_pred_visible = extract_visible_trajectory(traj_gt, traj_pred, vis_gt)
-    traj_gt_visible_chain, traj_pred_visible_chain = extract_visible_trajectory_chain(traj_gt, traj_pred, vis_gt)
+    traj_gt_visible_chain, traj_pred_visible_chain = extract_visible_trajectory_chain(traj_gt, traj_pred, vis_gt,
+                                                                                      query_point)
+
     assert vis_gt.sum() == len(traj_gt_visible)
     assert vis_gt.sum() >= len(traj_gt_visible_chain)
 
@@ -286,62 +305,6 @@ def compute_summary_df(results_list: List[Dict]) -> pd.DataFrame:
     for results in results_list:
         summaries += [compute_summary(results)]
     return pd.DataFrame.from_records(summaries)
-
-
-def compute_summary_df_for_batched_results(results_list, batch_size=4096, drop_last=False):
-    """
-    Compute a summary dataframe for a list of results. The results will be grouped into batches of given batch size.
-    A summary will be computed for each batch. If the last batch does not have `batch_size` elements, then it will be
-    dropped if `drop_last` is set to `True`. All summaries are returned in a dataframe.
-
-    Parameters:
-    -----------
-    results_list : list
-        A list of results.
-    batch_size : int, optional
-        The size of each batch.
-    drop_last : bool, optional
-        Whether to drop the last batch if it does not contain `batch_size` elements.
-
-    Returns:
-    --------
-    df_batched : pandas DataFrame
-        A dataframe of summaries computed using <see cref=compute_summary_df>.
-    """
-    # TODO: Consider if we want to drop the last element, or compute a weighted averaging
-    if drop_last:
-        n_batches = math.floor(len(results_list) / batch_size)
-    else:
-        n_batches = math.ceil(len(results_list) / batch_size)
-
-    results_batched_list = []
-    for batch_idx in range(n_batches):
-        batch = results_list[batch_idx * batch_size:(batch_idx + 1) * batch_size]
-        results_batched_list += [{
-            'iter': 'batch',
-            'video_idx': 'batch',
-            'point_idx_in_video': 'batch',
-            'trajectory_gt': torch.concat([r["trajectory_gt"] for r in batch]),
-            'trajectory_pred': torch.concat([r["trajectory_pred"] for r in batch]),
-            'valids': torch.concat([r["valids"] for r in batch]),
-            'visibility_gt': torch.concat([r["visibility_gt"] for r in batch]),
-        }]
-
-        stride = results_list[0]['trajectory_gt'].shape[0]
-        assert len(results_batched_list[batch_idx]["trajectory_gt"]) == len(
-            results_batched_list[batch_idx]["valids"]) == stride * len(batch)
-
-    df_batched = compute_summary_df(results_batched_list)
-
-    # TODO: Chain metrics are not computed correctly for batched results, thus I put a warning number.
-    #       This is because the current chain metrics assume that the first point is the start of the chain,
-    #       but in the merged batch results, the query points are not only the first points, but are distributed
-    #       throughout the batch.
-    for col in df_batched.columns:
-        if "chain" in str(col).lower():
-            df_batched[col] = df_batched[col].apply(lambda x: np.nan)
-
-    return df_batched
 
 
 def figure1(
@@ -568,7 +531,7 @@ def table2(
         df: pd.DataFrame,
         output_path: str,
         mostly_visible_threshold: int = 4,
-        add_legacy_metrics: bool = True,
+        add_legacy_metrics: bool = False,
         add_tapvid_metrics: bool = True,
         create_heatmap: bool = True,
         name: str = "table2-selected-metrics"
@@ -601,7 +564,9 @@ def table2(
         df_list += [df_mostly_visible_ade, df_mostly_occluded_ade]
 
     if add_tapvid_metrics:
-        df_tapvid_metrics = df[["name", "pts_within_1", "pts_within_2", "pts_within_4", "pts_within_8", "pts_within_16",
+        df_tapvid_metrics = df[["name",
+                                "pts_within_0.01", "pts_within_0.1", "pts_within_0.5",
+                                "pts_within_1", "pts_within_2", "pts_within_4", "pts_within_8", "pts_within_16",
                                 "average_pts_within_thresh"]].groupby(["name"]).mean()
         df_list += [df_tapvid_metrics]
 
@@ -633,13 +598,16 @@ def table3(
         df: pd.DataFrame,
         output_path: str,
         create_heatmap: bool = True,
-        name: str = "table3-batched-metrics"
+        name: str = "table3-pck"
 ) -> None:
     df = df.copy()
-    table_df = df[["name", "ade_visible", "ade_occluded",
+    df["iter"] = df.idx.apply(lambda x: x.split("--")[0])
+    table_df = df[["iter", "name", "ade_visible", "ade_occluded",
                    "pts_within_0.01", "pts_within_0.1", "pts_within_0.5",
                    "pts_within_1", "pts_within_2", "pts_within_4", "pts_within_8", "pts_within_16",
-                   "average_pts_within_thresh"]].groupby(["name"]).mean()
+                   "average_pts_within_thresh"]]
+    table_df = table_df.groupby(["name", "iter"]).mean()
+    table_df = table_df.groupby(["name"]).mean()
 
     table_df = table_df.sort_values("ade_visible", ascending=False)
     table_df.to_csv(os.path.join(output_path, f"{name}.csv"))
@@ -672,7 +640,7 @@ def add_ade_occluded_to_df(df):
             df.n_timesteps - df.n_timesteps_visible)
 
 
-def make_figures(df, output_path, mostly_visible_threshold, df_batched=None):
+def make_figures(df, output_path, mostly_visible_threshold):
     df = df.copy()
     # table1(df, output_path, "ade", name="withquery__table1")
     # table1(df, output_path, "ade_visible", name="withquery__table1")
@@ -681,12 +649,13 @@ def make_figures(df, output_path, mostly_visible_threshold, df_batched=None):
     # figure2(df, output_path, "ade_visible", name="withquery__figure2")
     # figure3(df, output_path, name="withquery__figure3")
 
-    ad_hoc_ade_fix(df)
+    # ad_hoc_ade_fix(df)
     add_ade_occluded_to_df(df)
 
     # table1(df, output_path, "ade", name="table1")
     # table1(df, output_path, "ade_visible", name="table1")
     table2(df, output_path, mostly_visible_threshold, name="table2-selected-metrics")
+    table3(df, output_path, name="table3-pck-metrics")
 
     figure1(df, output_path, name="figure1")
     # figure1(df, output_path, name="log__figure1")
@@ -696,13 +665,6 @@ def make_figures(df, output_path, mostly_visible_threshold, df_batched=None):
     # figure2(df, output_path, "ade_visible", log_y=True, name="log__figure2")
     figure3(df, output_path, name="figure3")
     figure4(df, output_path, name="figure4")
-
-    if df_batched is not None:
-        df_batched = df_batched.copy()
-        ad_hoc_ade_fix(df_batched)
-        add_ade_occluded_to_df(df_batched)
-        table3(df_batched, args.output_path, name="table3-tapvid-metrics-for-batched-df")
-        figure4(df_batched, output_path, name="figure4-batched-df")
 
 
 if __name__ == '__main__':
@@ -732,7 +694,6 @@ if __name__ == '__main__':
     ensure_dir(args.output_path)
 
     results_df_list = []
-    batched_results_df_list = []
     for path, name in zip(args.results_path_list, args.results_name_list, strict=True):
         if path.endswith(".csv"):
             df = pd.read_csv(path)
@@ -752,10 +713,6 @@ if __name__ == '__main__':
                 print(f"Recomputing summary for {name}...")
                 df = compute_summary_df(results_list)
 
-                print(f"Computing summary for batched results of {name}...")
-                df_batched = compute_summary_df_for_batched_results(results_list)
-                df_batched["name"] = name
-                batched_results_df_list += [df_batched]
         else:
             raise ValueError(f"The results path provided does not point to a `.csv` or `.pkl` file. "
                              f"The given path was: `{path}`")
@@ -767,5 +724,4 @@ if __name__ == '__main__':
         results_df_list += [df]
 
     df = pd.concat(results_df_list)
-    df_batched = pd.concat(batched_results_df_list)
-    make_figures(df, args.output_path, args.mostly_visible_threshold, df_batched=df_batched)
+    make_figures(df, args.output_path, args.mostly_visible_threshold)

@@ -31,7 +31,7 @@ from nets.pips import Pips
 from nets.raftnet import Raftnet
 from pips_utils.figures import compute_summary_df, figure1, figure2
 from pips_utils.util import ensure_dir
-from test_on_flt import run_for_sample
+from test_on_flt import evaluate_batch
 
 device = 'cuda'
 random.seed(125)
@@ -139,7 +139,7 @@ def main(
         iter_start_time = time.time()
 
         with torch.no_grad():
-            packed_results = run_for_sample(modeltype, model, sample, sw_t, dataset="crohd", mostly_visible_threshold=8)
+            packed_results = evaluate_batch(modeltype, model, sample, sw_t, dataset="crohd", mostly_visible_threshold=8)
             for b in range(packed_results["trajectory_gt"].shape[0]):
                 for n in range(packed_results["trajectory_gt"].shape[2]):
                     results_list += [{

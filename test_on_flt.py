@@ -1,5 +1,5 @@
 """
-Evaluate on FlyingThings++. Supports evaluating PIPs, RAFT, and DINO.
+Evaluate on FlyingThings++ or TAP-Vid. Supports evaluating PIPs, RAFT, and DINO.
 
 Examples of usage:
 ```bash
@@ -10,11 +10,11 @@ python test_on_flt.py --modeltype dino --seed 123
 python test_on_flt.py --modeltype dino --seed 123 --N 64
 ```
 """
-import datetime
 import os
 import pickle
 import random
 import time
+from typing import Tuple, Union
 
 import numpy as np
 import torch
@@ -29,212 +29,64 @@ import pips_utils.misc
 import pips_utils.samp
 import pips_utils.test
 import saverloader
-from datasets.flyingthingsdataset import FlyingThingsDataset
-from datasets.tapviddataset import TAPVidDataset
+from datasets.flyingthings import FlyingThingsDataset
+from datasets.tapvid import TAPVidIterator
 from nets.pips import Pips
 from nets.raftnet import Raftnet
 from pips_utils.figures import compute_summary_df, make_figures
-from pips_utils.util import ensure_dir
+from pips_utils.util import ensure_dir, get_str_formatted_time
 
 device = 'cuda'
 random.seed(125)
 np.random.seed(125)
 
 
-def run_for_sample(modeltype, model, d, sw, dataset="flyingthings++", mostly_visible_threshold=4):
-    if dataset == "flyingthings++":
-        rgbs = d['rgbs'].cuda().float()
-        occs = d['occs'].cuda().float()
-        masks = d['masks'].cuda().float()
-        trajs_gt = d['trajs'].cuda().float()
-        vis_gt = d['visibles'].cuda().float()
-        valids = d['valids'].cuda().float()
-
-        B, S, C, H, W = rgbs.shape
-        _, _, N, D = trajs_gt.shape
-
-        assert D == 2
-        assert C == 3
-
-        assert rgbs.shape == (B, S, C, H, W)
-        assert occs.shape == (B, S, 1, H, W)
-        assert masks.shape == (B, S, 1, H, W)
-        assert trajs_gt.shape == (B, S, N, D)
-        assert vis_gt.shape == (B, S, N)
-        assert valids.shape == (B, S, N)
-
-        assert (torch.sum(valids) == B * S * N)
-
-    elif dataset == "crohd":
-        rgbs = d['rgbs'].cuda()
-        trajs_gt = d['trajs_g'].cuda()  # B,S,N,2
-        vis_gt = d['vis_g'].cuda()  # B,S,N
-        valids = torch.ones_like(vis_gt)  # B,S,N
-
-        B, S, C, H, W = rgbs.shape
-        B, S1, N, D = trajs_gt.shape
-
-        rgbs_ = rgbs.reshape(B * S, C, H, W)
-        if modeltype == "dino":
-            H_, W_ = 512, 768
-        else:
-            H_, W_ = 768, 1280
-
-        sy = H_ / H
-        sx = W_ / W
-        rgbs_ = F.interpolate(rgbs_, (H_, W_), mode='bilinear')
-        H, W = H_, W_
-        rgbs = rgbs_.reshape(B, S, C, H, W)
-        trajs_gt[:, :, :, 0] *= sx
-        trajs_gt[:, :, :, 1] *= sy
-
-        _, S, C, H, W = rgbs.shape
-
-    elif dataset == "tapvid":
-        rgbs = d["rgbs"].cuda()
-        rgbs = (rgbs + 1) * 255 / 2  # Rescale from [-1,1] to [0,255]
-        trajs_gt = d["trajectories"].cuda()
-        vis_gt = d["visibility"].cuda()
-        valids = torch.ones_like(vis_gt)
-
-        B, S, C, H, W = rgbs.shape
-        _, _, N, D = trajs_gt.shape
-
-        assert C == 3
-        assert D == 2
-
-        assert rgbs.shape == (B, S, C, H, W)
-        assert trajs_gt.shape == (B, S, N, D)
-        assert vis_gt.shape == (B, S, N)
-        assert valids.shape == (B, S, N)
-
-    else:
-        raise ValueError(f"Invalid dataset given: `{dataset}`")
-
-    # compute per-sequence visibility labels
-    good_visibility_mask = (torch.sum(vis_gt, dim=1, keepdim=True) >= mostly_visible_threshold).float().repeat(1, S, 1)
-
-    if modeltype == 'pips':
-        preds, preds_anim, vis_e, stats = model(trajs_gt[:, 0], rgbs, iters=6, trajs_g=trajs_gt, vis_g=vis_gt,
-                                                valids=valids, sw=sw)
-        trajs_pred = preds[-1]
-
-    elif modeltype == 'dino':
-        trajs_pred = pips_utils.test.get_dino_output(model, rgbs, trajs_gt, vis_gt)
-
-    elif modeltype == 'raft':
-        prep_rgbs = pips_utils.improc.preprocess_color(rgbs)
-
-        flows_e = []
-        for s in range(S - 1):
-            rgb0 = prep_rgbs[:, s]
-            rgb1 = prep_rgbs[:, s + 1]
-            flow, _ = model(rgb0, rgb1, iters=32)
-            flows_e.append(flow)
-        flows_e = torch.stack(flows_e, dim=1)
-        assert flows_e.shape == (B, S - 1, 2, H, W)
-
-        coords = []
-        coord0 = trajs_gt[:, 0]
-        coords.append(coord0)
-        coord = coord0.clone()
-        for s in range(S - 1):
-            delta = pips_utils.samp.bilinear_sample2d(flows_e[:, s], coord[:, :, 0], coord[:, :, 1]).permute(0, 2, 1)
-            assert delta.shape == (B, N, 2), "Forward flow at the discrete points"
-            coord = coord + delta
-            coords.append(coord)
-        trajs_pred = torch.stack(coords, dim=1)
-
-    else:
-        raise ValueError(f"Invalid modeltype given: `{modeltype}`")
-
-    assert trajs_pred.shape == (B, S, N, 2)
-
-    ate = torch.norm(trajs_pred - trajs_gt, dim=-1)
-    assert ate.shape == (B, S, N)
-    ate_all = pips_utils.basic.reduce_masked_mean(ate, valids)
-    ate_vis = pips_utils.basic.reduce_masked_mean(ate, valids * good_visibility_mask)
-    ate_occ = pips_utils.basic.reduce_masked_mean(ate, valids * (1.0 - good_visibility_mask))
-
-    results = {
-        "ate_all": ate_all.item(),
-        "ate_vis": ate_vis.item(),
-        "ate_occ": ate_occ.item(),
-        "B": B, "S": S, "C": C, "H": H, "W": W, "N": N, "D": D,
-        "trajectory_gt": trajs_gt.detach().clone().cpu(),
-        "trajectory_pred": trajs_pred.detach().clone().cpu(),
-        "valids": valids.detach().clone().cpu(),
-        "visibility_gt": vis_gt.detach().clone().cpu(),
-    }
-    assert valids.all().item(), "FlyingThings++ always has all points valid"
-
-    if sw is not None and sw.save_this:
-        sw.summ_traj2ds_on_rgbs('inputs_0/orig_trajs_on_rgbs', trajs_gt, pips_utils.improc.preprocess_color(rgbs),
-                                cmap='winter', linewidth=2)
-
-        sw.summ_traj2ds_on_rgbs('outputs/trajs_on_rgbs', trajs_pred[0:1], pips_utils.improc.preprocess_color(rgbs[0:1]),
-                                cmap='spring', linewidth=2)
-        gt_rgb = pips_utils.improc.preprocess_color(
-            sw.summ_traj2ds_on_rgb('inputs_0_all/single_trajs_on_rgb', trajs_gt[0:1],
-                                   torch.mean(pips_utils.improc.preprocess_color(rgbs[0:1]), dim=1), cmap='winter',
-                                   frame_id=results['ate_all'], only_return=True, linewidth=2))
-        gt_black = pips_utils.improc.preprocess_color(
-            sw.summ_traj2ds_on_rgb('inputs_0_all/single_trajs_on_rgb', trajs_gt[0:1],
-                                   torch.ones_like(rgbs[0:1, 0]) * -0.5, cmap='winter', frame_id=results['ate_all'],
-                                   only_return=True, linewidth=2))
-
-        sw.summ_traj2ds_on_rgb('outputs/single_trajs_on_gt_rgb', trajs_pred[0:1], gt_rgb[0:1], cmap='spring',
-                               linewidth=2)
-        sw.summ_traj2ds_on_rgb('outputs/single_trajs_on_gt_black', trajs_pred[0:1], gt_black[0:1], cmap='spring',
-                               linewidth=2)
-
-        # animate_traj2ds_on_rgbs
-        if modeltype == "pips":
-            rgb_vis = []
-            black_vis = []
-            for trajs_e_ in preds_anim:
-                rgb_vis.append(sw.summ_traj2ds_on_rgb('', trajs_e_[0:1], gt_rgb, only_return=True, cmap='coolwarm'))
-                black_vis.append(sw.summ_traj2ds_on_rgb('', trajs_e_[0:1], gt_black, only_return=True, cmap='coolwarm'))
-            sw.summ_rgbs('outputs/animated_trajs_on_black', black_vis)
-            sw.summ_rgbs('outputs/animated_trajs_on_rgb', rgb_vis)
-
-    return results
-
-
-def main(
-        exp_name,
-        dataset_type,
-        dataset_location,
-        subset='all',
-        mostly_visible_threshold=4,
-        B=1,
-        S=8,
-        N=None,
-        modeltype='pips',
-        init_dir='reference_model',
-        stride=4,
-        max_iters=-1,
-        log_freq=50,
-        dataloader_workers=20,
-        shuffle=False,
-        log_dir='logs',
-        seed=72,
-        # FlyingThings++ specific
-        crop_size=(384, 512),  # the raw data is 540,960
-        use_augs=False,
-):
+def seed_all(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def evaluate(
+        dataset_type: str,
+        dataset_location: str,
+        subset: str = 'all',
+        shuffle: bool = False,
+        dataloader_workers: int = 20,
+        seed: int = 72,
+
+        modeltype: str = 'pips',
+        init_dir: str = 'reference_model',
+        stride: int = 4,
+
+        B: int = 1,
+        S: int = 8,
+        N: Union[int, None] = None,
+        mostly_visible_threshold: int = 4,
+
+        exp_name: str = "test",
+        log_freq: int = 50,
+        log_dir: str = 'logs',
+
+        # FlyingThings++ specific
+        crop_size: Tuple[int] = (384, 512),  # the raw data is 540,960
+        use_augs: bool = False,
+
+        # TAP-Vid specific
+        query_mode: str = "strided",
+):
+    seed_all(seed)
 
     assert (modeltype == 'pips' or modeltype == 'raft' or modeltype == 'dino')
 
     model_name = f"{B:d}_{S:d}_{N}_{modeltype:s}"
     if use_augs:
         model_name += "_A"
+    if dataset_type == "tapvid":
+        model_name += f"_{query_mode}"
     model_name += f"_{exp_name:s}"
-    model_date = datetime.datetime.now().strftime('%H:%M:%S')
+    model_date = get_str_formatted_time()
     model_name = model_name + '_' + model_date
     print('model_name', model_name)
 
@@ -248,27 +100,23 @@ def main(
             N=N, S=S,
             crop_size=crop_size,
         )
+        test_dataloader = DataLoader(
+            dataset,
+            batch_size=B,
+            shuffle=shuffle,
+            num_workers=dataloader_workers,
+            worker_init_fn=worker_seed_init_fn,
+            drop_last=True,
+        )
 
     elif dataset_type == "tapvid":
-        dataset = TAPVidDataset(dataset_location, subset, S)
+        test_dataloader = TAPVidIterator(dataset_location, subset, query_mode)
 
     elif dataset_type == "crohd":
         raise NotImplementedError()
 
     else:
         raise ValueError(f"Invalid dataset type given: `{dataset_type}`")
-
-    def worker_init_fn(worker_id):
-        np.random.seed(np.random.get_state()[1][0] + worker_id)
-
-    test_dataloader = DataLoader(
-        dataset,
-        batch_size=B,
-        shuffle=shuffle,
-        num_workers=dataloader_workers,
-        worker_init_fn=worker_init_fn,
-        drop_last=True,
-    )
 
     if modeltype == 'pips':
         model = Pips(S=S, stride=stride).cuda()
@@ -284,23 +132,12 @@ def main(
     else:
         raise ValueError(f"Invalid modeltype given: `{modeltype}`")
 
-    n_pool = 10000
-    ate_all_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
-    ate_vis_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
-    ate_occ_pool_t = pips_utils.misc.SimplePool(n_pool, version='np')
-
-    if max_iters == -1 and hasattr(test_dataloader, '__len__'):
-        max_iters = len(test_dataloader)
-    print(f'max_iters={max_iters}')
-
     results_list = []
-    global_step = 0
     read_start_time = time.time()
-    for sample in test_dataloader:
-        global_step += 1
+    for batch_idx, batch in enumerate(test_dataloader):
         sw_t = pips_utils.improc.Summ_writer(
             writer=writer_t,
-            global_step=global_step,
+            global_step=batch_idx,
             log_freq=log_freq,
             fps=5,
             scalar_freq=int(log_freq / 2),
@@ -311,59 +148,265 @@ def main(
         iter_start_time = time.time()
 
         with torch.no_grad():
-            packed_results = run_for_sample(modeltype, model, sample, sw_t, dataset_type, mostly_visible_threshold)
-            for b in range(packed_results["trajectory_gt"].shape[0]):
-                for n in range(packed_results["trajectory_gt"].shape[2]):
+            packed_results = evaluate_batch(modeltype, model, batch, sw_t, dataset_type)
+            for b in range(packed_results["trajectories_gt"].shape[0]):
+                for n in range(packed_results["trajectories_gt"].shape[2]):
                     result = {
-                        "iter": global_step,
+                        "iter": batch_idx,
                         "video_idx": b,
                         "point_idx_in_video": n,
-                        "trajectory_gt": packed_results["trajectory_gt"][b, :, n, :],
-                        "trajectory_pred": packed_results["trajectory_pred"][b, :, n, :],
-                        "valids": packed_results["valids"][b, :, n],
-                        "visibility_gt": packed_results["visibility_gt"][b, :, n],
+                        "trajectory_gt": packed_results["trajectories_gt"][b, :, n, :],
+                        "trajectory_pred": packed_results["trajectories_pred"][b, :, n, :],
+                        "visibility_gt": packed_results["visibilities_gt"][b, :, n],
+                        "query_point": packed_results["query_points"][b, n, :],
                     }
                     results_list += [result]
-
-        if packed_results['ate_all'] > 0:
-            ate_all_pool_t.update([packed_results['ate_all']])
-        if packed_results['ate_vis'] > 0:
-            ate_vis_pool_t.update([packed_results['ate_vis']])
-        if packed_results['ate_occ'] > 0:
-            ate_occ_pool_t.update([packed_results['ate_occ']])
-        sw_t.summ_scalar('pooled/ate_all', ate_all_pool_t.mean())
-        sw_t.summ_scalar('pooled/ate_vis', ate_vis_pool_t.mean())
-        sw_t.summ_scalar('pooled/ate_occ', ate_occ_pool_t.mean())
 
         iter_time = time.time() - iter_start_time
         print(
             f'{model_name}'
-            f' step={global_step:06d}/{max_iters:d}'
+            f' step={batch_idx:06d}'
             f' readtime={read_time:>2.2f}'
             f' itertime={iter_time:>2.2f}'
-            f' ate_all={ate_all_pool_t.mean():>2.2f}'
-            f' ate_vis={ate_vis_pool_t.mean():>2.2f}'
-            f' ate_occ={ate_occ_pool_t.mean():>2.2f}'
         )
         read_start_time = time.time()
-
     writer_t.close()
+
+    save_results(log_dir, model_name, modeltype, mostly_visible_threshold, results_list)
+
+
+def worker_seed_init_fn(worker_id):
+    np.random.seed(np.random.get_state()[1][0] + worker_id)
+
+
+def evaluate_batch(modeltype, model, batch, summary_writer, dataset="flyingthings++"):
+    rgbs, query_points, trajectories_gt, visibilities_gt = unpack_batch(batch, dataset, modeltype)
+    trajectories_pred = forward_pass(model, modeltype, summary_writer,
+                                     rgbs, query_points, trajectories_gt, visibilities_gt)
+
+    batch_size = rgbs.shape[0]
+    n_frames = rgbs.shape[1]
+    n_points = trajectories_gt.shape[2]
+    assert trajectories_pred.shape == (batch_size, n_frames, n_points, 2)
+
+    results = {
+        "trajectories_gt": trajectories_gt.detach().clone().cpu(),
+        "visibilities_gt": visibilities_gt.detach().clone().cpu(),
+        "trajectories_pred": trajectories_pred.detach().clone().cpu(),
+        "query_points": query_points.detach().clone().cpu(),
+    }
+
+    if summary_writer is not None and summary_writer.save_this:
+        log_batch_visualisations(summary_writer, rgbs, results["trajectories_gt"], results["trajectories_pred"])
+    return results
+
+
+def unpack_batch(batch, dataset, modeltype):
+    # TODO Refactor: Move to respective dataloaders
+    if dataset == "flyingthings++":
+        rgbs = batch['rgbs'].cuda().float()
+        query_points = None  # TODO
+        trajectories_gt = batch['trajs'].cuda().float()
+        visibilities_gt = batch['visibles'].cuda().float()
+
+    elif dataset == "crohd":
+        rgbs = batch['rgbs'].cuda()
+        query_points = None  # TODO
+        trajectories_gt = batch['trajs_g'].cuda()
+        visibilities_gt = batch['vis_g'].cuda()
+
+        batch_size, n_frames, channels, height, width = rgbs.shape
+        batch_size, S1, n_points, D = trajectories_gt.shape
+
+        rgbs_ = rgbs.reshape(batch_size * n_frames, channels, height, width)
+        if modeltype == "dino":
+            H_, W_ = 512, 768
+        else:
+            H_, W_ = 768, 1280
+
+        sy = H_ / height
+        sx = W_ / width
+        rgbs_ = F.interpolate(rgbs_, (H_, W_), mode='bilinear')
+        height, width = H_, W_
+        rgbs = rgbs_.reshape(batch_size, n_frames, channels, height, width)
+        trajectories_gt[:, :, :, 0] *= sx
+        trajectories_gt[:, :, :, 1] *= sy
+
+    elif dataset == "tapvid":
+        rgbs = batch["rgbs"].cuda()
+        query_points = batch["query_points"].cuda()
+        trajectories_gt = batch["trajectories"].cuda()
+        visibilities_gt = batch["visibilities"].cuda()
+
+    else:
+        raise ValueError(f"Invalid dataset given: `{dataset}`")
+
+    batch_size, n_frames, channels, height, width = rgbs.shape
+    n_points = trajectories_gt.shape[2]
+
+    assert rgbs.shape == (batch_size, n_frames, channels, height, width)
+    assert query_points.shape == (batch_size, n_points, 3)
+    assert trajectories_gt.shape == (batch_size, n_frames, n_points, 2)
+    assert visibilities_gt.shape == (batch_size, n_frames, n_points)
+
+    return rgbs, query_points, trajectories_gt, visibilities_gt
+
+
+def forward_pass(model, modeltype, summary_writer, rgbs, query_points, trajectories_gt, visibilities_gt):
+    # TODO Refactor: Move to respective models, create a wrapper around each model
+    if modeltype == 'pips':
+        raise NotImplementedError()  # TODO
+        model: Pips = model
+        preds, preds_anim, vis_e, stats = model(
+            xys=trajectories_gt[:, 0],
+            rgbs=rgbs,
+            iters=6,
+            trajs_g=trajectories_gt,
+            vis_g=visibilities_gt,
+            sw=summary_writer,
+        )
+        return preds[-1]
+
+    elif modeltype == 'dino':
+        raise NotImplementedError()  # TODO
+        return pips_utils.test.get_dino_output(model, rgbs, trajectories_gt, visibilities_gt)
+
+    elif modeltype == 'raft':
+        model: Raftnet = model
+        prep_rgbs = pips_utils.improc.preprocess_color(rgbs)
+
+        batch_size, n_frames, channels, height, width = rgbs.shape
+        n_points = trajectories_gt.shape[2]
+
+        flows_forward = []
+        flows_backward = []
+        for t in range(1, n_frames):
+            rgb0 = prep_rgbs[:, t - 1]
+            rgb1 = prep_rgbs[:, t]
+            flows_forward.append(model(rgb0, rgb1, iters=32)[0])
+            flows_backward.append(model(rgb1, rgb0, iters=32)[0])
+        flows_forward = torch.stack(flows_forward, dim=1)
+        flows_backward = torch.stack(flows_backward, dim=1)
+        assert flows_forward.shape == flows_backward.shape == (batch_size, n_frames - 1, 2, height, width)
+
+        coords = []
+        for t in range(n_frames):
+            if t == 0:
+                coord = torch.zeros_like(trajectories_gt[:, 0])
+            else:
+                prev_coord = coords[t - 1]
+                delta = pips_utils.samp.bilinear_sample2d(
+                    im=flows_forward[:, t - 1],
+                    x=prev_coord[:, :, 0],
+                    y=prev_coord[:, :, 1],
+                ).permute(0, 2, 1)
+                assert delta.shape == (batch_size, n_points, 2), "Forward flow at the discrete points"
+                coord = prev_coord + delta
+
+            # Set the ground truth query point location if hte timestep is correct
+            query_point_mask = query_points[:, :, 0] == t
+            coord = coord * ~query_point_mask.unsqueeze(-1) + query_points[:, :, 1:] * query_point_mask.unsqueeze(-1)
+
+            coords.append(coord)
+
+        for t in range(n_frames - 2, -1, -1):
+            coord = coords[t]
+            successor_coord = coords[t + 1]
+
+            delta = pips_utils.samp.bilinear_sample2d(
+                im=flows_backward[:, t],
+                x=successor_coord[:, :, 0],
+                y=successor_coord[:, :, 1],
+            ).permute(0, 2, 1)
+            assert delta.shape == (batch_size, n_points, 2), "Backward flow at the discrete points"
+
+            # Update only the points that are located prior to the query point
+            prior_to_query_point_mask = t < query_points[:, :, 0]
+            coord = (coord * ~prior_to_query_point_mask.unsqueeze(-1) +
+                     (successor_coord + delta) * prior_to_query_point_mask.unsqueeze(-1))
+            coords[t] = coord
+
+        return torch.stack(coords, dim=1)
+
+    else:
+        raise ValueError(f"Invalid modeltype given: `{modeltype}`")
+
+
+def log_batch_visualisations(summary_writer: pips_utils.improc.Summ_writer, rgbs, trajectories_gt, trajectories_pred):
+    # Plot ground truth trajectories on input RGBs
+    rgbs = pips_utils.improc.preprocess_color(rgbs)
+    summary_writer.summ_traj2ds_on_rgbs(
+        name='inputs_0/orig_trajs_on_rgbs',
+        trajs=trajectories_gt,
+        rgbs=rgbs,
+        cmap='winter',
+        linewidth=2,
+    )
+
+    # Plot predicted trajectories on output RGBs
+    summary_writer.summ_traj2ds_on_rgbs(
+        name='outputs/trajs_on_rgbs',
+        trajs=trajectories_pred[0:1],
+        rgbs=rgbs[0:1],
+        cmap='spring',
+        linewidth=2,
+    )
+
+    # Plot ground truth trajectories on input RGBs with only the trajectories shown
+    gt_rgb = summary_writer.summ_traj2ds_on_rgb(
+        name='inputs_0_all/single_trajs_on_rgb',
+        trajs=trajectories_gt[0:1],
+        rgb=torch.mean(rgbs[0:1], dim=1),
+        cmap='winter',
+        only_return=True,
+        linewidth=2,
+    )
+    gt_rgb = pips_utils.improc.preprocess_color(gt_rgb)
+
+    # Plot ground truth trajectories on a black RGB with only the trajectories shown
+    gt_black = summary_writer.summ_traj2ds_on_rgb(
+        name='inputs_0_all/single_trajs_on_rgb',
+        trajs=trajectories_gt[0:1],
+        rgb=torch.ones_like(rgbs[0:1, 0]) * -0.5,
+        cmap='winter',
+        only_return=True,
+        linewidth=2,
+    )
+    gt_black = pips_utils.improc.preprocess_color(gt_black)
+
+    # Plot predicted trajectories on input RGBs with ground truth trajectories
+    summary_writer.summ_traj2ds_on_rgb(
+        name='outputs/single_trajs_on_gt_rgb',
+        trajs=trajectories_pred[0:1],
+        rgb=gt_rgb[0:1],
+        cmap='spring',
+        linewidth=2,
+    )
+
+    # Plot predicted trajectories on black RGB with ground truth trajectories
+    summary_writer.summ_traj2ds_on_rgb(
+        name='outputs/single_trajs_on_gt_black',
+        trajs=trajectories_pred[0:1],
+        rgb=gt_black[0:1],
+        cmap='spring',
+        linewidth=2,
+    )
+
+
+def save_results(log_dir, model_name, modeltype, mostly_visible_threshold, results_list):
     results_list_pkl_path = os.path.join(log_dir, model_name, "results_list.pkl")
     with open(results_list_pkl_path, "wb") as f:
         print(f"\nResults pickle file saved to:\n{results_list_pkl_path}")
         pickle.dump(results_list, f)
-
     results_df_path = os.path.join(log_dir, model_name, "results_df.csv")
     results_df = compute_summary_df(results_list)
     results_df.to_csv(results_df_path)
     print(f"\nResults summary dataframe saved to:\n{results_df_path}\n")
-
     figures_dir = os.path.join(log_dir, model_name, "figures")
     ensure_dir(figures_dir)
     results_df["name"] = modeltype
-
     make_figures(results_df, figures_dir, mostly_visible_threshold)
 
 
 if __name__ == '__main__':
-    Fire(main)
+    Fire(evaluate)
