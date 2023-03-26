@@ -1,17 +1,13 @@
+# TODO Should be moved to evaluate.py
+
 import time
-import argparse
 import numpy as np
-import timeit
 import cv2
-import saverloader
+from pips_utils import saverloader
 from nets.pips import Pips
 import pips_utils.basic
 import pips_utils.improc
-import random
-from pips_utils.basic import print_, print_stats
 import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
 from tensorboardX import SummaryWriter
 import torch.nn.functional as F
 import os

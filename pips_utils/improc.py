@@ -1,11 +1,13 @@
-import torch
-import numpy as np
-import pips_utils.basic
-from sklearn.decomposition import PCA
-from matplotlib import cm
-import matplotlib.pyplot as plt
 import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 import torch.nn.functional as F
+from matplotlib import cm
+from sklearn.decomposition import PCA
+
+import pips_utils.basic
+
 EPS = 1e-6
 
 def preprocess_color_tf(x):
@@ -130,12 +132,12 @@ def gif_and_tile(ims, just_gif=False):
 
 def back2color(i, blacken_zeros=False):
     if blacken_zeros:
-        const = torch.tensor([-0.5])
-        i = torch.where(i==0.0, const.cuda() if i.is_cuda else const, i)
+        const = torch.tensor([-0.5]).to(i.device)
+        i = torch.where(i==0.0, const, i)
         return back2color(i)
     else:
         return ((i+0.5)*255).type(torch.ByteTensor)
-    
+
 def xy2heatmap(xy, sigma, grid_xs, grid_ys, norm=False):
     # xy is B x N x 2, containing float x and y coordinates of N things
     # grid_xs and grid_ys are B x N x Y x X
@@ -209,7 +211,7 @@ def seq2color(im, norm=True, colormap='coolwarm'):
     # coeffs[:int(S/2)] -= 2.0
     # coeffs[int(S/2)+1:] += 2.0
     
-    coeffs = torch.from_numpy(coeffs).float().cuda()
+    coeffs = torch.from_numpy(coeffs).float().to(im.device)
     coeffs = coeffs.reshape(1, S, 1, 1).repeat(B, 1, H, W)
     # scale each channel by the right coeff
     im = im * coeffs
@@ -242,7 +244,7 @@ def seq2color(im, norm=True, colormap='coolwarm'):
             assert(False) # invalid colormap
         # move channels into dim 0
         im_ = np.transpose(im_, [2, 0, 1])
-        im_ = torch.from_numpy(im_).float().cuda()
+        im_ = torch.from_numpy(im_).float().to(im.device)
         out.append(im_)
     out = torch.stack(out, dim=0)
     

@@ -1,5 +1,7 @@
 # Reproduce PIPs Results
 
+TODO: Revise documentation after refactoring and rewriting the evaluation setup.
+
 ## Environment Setup
 
 I will use conda to manage the environment.

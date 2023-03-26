@@ -1,7 +1,11 @@
 import math
 import pathlib
+import random
 from datetime import datetime
 from typing import List, Any
+
+import numpy as np
+import torch
 
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -198,3 +202,14 @@ def zip_strict(*lists):
     lengths = [len(_list) for _list in lists]
     assert all([length == lengths[0] for length in lengths]), "All input lists must have the same length."
     return zip(*lists)
+
+
+def seed_all(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+def worker_seed_init_fn(worker_id):
+    np.random.seed(np.random.get_state()[1][0] + worker_id)

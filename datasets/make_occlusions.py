@@ -291,7 +291,7 @@ def helper(rgb_path, mask_path, flow_path, out_dir, folder_name, lr, start_ind, 
     # end loop over ids
 
     np.save(out_f, save_d)
-    sys.stdout.write('.')
+    sys.stdout.write('..')
     sys.stdout.flush()
     
 

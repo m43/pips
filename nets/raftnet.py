@@ -27,7 +27,6 @@ class Raftnet(nn.Module):
         self.model = torch.nn.DataParallel(RAFT(args))
         if ckpt_name is not None:
             self.model.load_state_dict(torch.load(ckpt_name))
-        # self.model.cuda()
 
     def forward(self, image1, image2, iters=20, test_mode=True):
         # input images are in [-0.5, 0.5]

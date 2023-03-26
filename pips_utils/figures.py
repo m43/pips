@@ -1,11 +1,11 @@
 import argparse
 import os
 import pickle
+import warnings
 from collections import namedtuple
 from itertools import cycle
 from typing import Dict, List, Tuple
 
-import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
@@ -188,7 +188,8 @@ def compute_summary(results: Dict) -> Dict:
           where S is the number of time steps and D is the number of dimensions.
         - 'trajectory_pred': A 2D tensor representing the predicted trajectory. Its shape should be (S, D),
           where S is the number of time steps and D is the number of dimensions.
-        - 'visibility_gt': A 1D tensor representing the visibility of each time step. Its length should be S.
+        - 'visibility_gt': A 1D tensor of length S representing the visibility of each time step.
+        - 'visibility_pred': A 1D tensor of length S representing the predicted visibility of each time step.
 
     Returns
     -------
@@ -219,6 +220,7 @@ def compute_summary(results: Dict) -> Dict:
     ...     'trajectory_gt': torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]),
     ...     'trajectory_pred': torch.tensor([[0.0, 0.0], [2.0, 2.0], [3.0, 3.0]]),
     ...     'visibility_gt': torch.tensor([True, True, False])
+    ...     'visibility_pred': torch.tensor([True, True, True]),
     ... }
     >>> compute_summary(results)
     {
@@ -266,13 +268,19 @@ def compute_summary(results: Dict) -> Dict:
         "n_timesteps_visible_chain": len(traj_gt_visible_chain),
     }
 
-    # TODO consider rescaling the images/trajectories to 256x256
+    # TODO ad hoc fix for results saved to disk without the visibility_pred field
+    if "visibility_pred" not in results:
+        warnings.warn("The 'visibility_pred' field is missing from the results for idx={idx}. "
+                      "It will be set to all ones.")
+        results["visibility_pred"] = torch.ones_like(results["visibility_gt"])
+
+    # TODO Rescale the trajectories of all datasets (e.g., FLT++) to 256x256, as suggested in the TAP-Vid paper
     from datasets.tapvid_evaluation_datasets import compute_tapvid_metrics
     tapvid_metrics = compute_tapvid_metrics(
-        query_points=np.array([[[0, results["trajectory_gt"][0, 0], results["trajectory_gt"][0, 1]]]]),
+        query_points=results["query_point"][None, None, :].numpy(),
         gt_occluded=~results["visibility_gt"][None, None, :].numpy(),
         gt_tracks=results["trajectory_gt"][None, None, :, :].numpy(),
-        pred_occluded=0 * results["visibility_gt"][None, None, :].numpy(),  # TODO Save vis preds during eval, for pips
+        pred_occluded=results["visibility_pred"][None, None, :].numpy(),
         pred_tracks=results["trajectory_pred"][None, None, :, :].numpy(),
         query_mode="first",
         additional_pck_thresholds=[
@@ -712,6 +720,18 @@ if __name__ == '__main__':
 
                 print(f"Recomputing summary for {name}...")
                 df = compute_summary_df(results_list)
+
+                for results in results_list:
+                    if results["query_point"][0] != 0:
+                        print(f"*** Results dictionary for the first datapoint with a non-first query, for {name}:")
+                        for k, v in results.items():
+                            print(f"{k}: {v}")
+                        print()
+                        print(f"*** Summary metrics for the first datapoint with a non-first query, for {name}:")
+                        for k, v in compute_summary(results).items():
+                            print(f"{k}: {v}")
+                        print()
+                        break
 
         else:
             raise ValueError(f"The results path provided does not point to a `.csv` or `.pkl` file. "

@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from PIL import Image
 from tensorboardX import SummaryWriter
 
-import saverloader
+from pips_utils import saverloader
 import pips_utils.improc
 from nets.pips import Pips
 from pips_utils.basic import print_, print_stats
