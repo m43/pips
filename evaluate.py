@@ -56,7 +56,7 @@ def get_parser():
     parser.add_argument('--mostly_visible_threshold', type=int, default=4)
 
     # Logging
-    parser.add_argument('--exp_name', type=str, default='test')
+    parser.add_argument('--experiment_name', type=str, default=None)
     parser.add_argument('--log_freq', type=int, default=50)
     parser.add_argument('--log_dir', type=str, default='logs')
 
@@ -75,16 +75,21 @@ def evaluate(args):
 
     assert (args.modeltype == 'pips' or args.modeltype == 'raft' or args.modeltype == 'dino')
 
-    model_name = f"{args.batch_size:d}_{args.pips_window:d}_{args.n_points}_{args.modeltype:s}"
-    if args.flt_use_augs:
-        model_name += "_A"
-    if args.dataset_type == "tapvid":
-        model_name += f"_{args.query_mode}"
-    model_name += f"_{args.exp_name:s}"
-    model_name += f"_{get_str_formatted_time()}"
-    print(f"model_name={model_name}")
+    if args.experiment_name is None:
+        experiment_name = f"{args.batch_size:d}_{args.pips_window:d}_{args.n_points}_{args.modeltype:s}"
+        experiment_name += f"_{args.seed}"
+        experiment_name += f"_{args.dataset_type}"
+        experiment_name += f"_{args.subset}"
+        if args.flt_use_augs:
+            experiment_name += "_useaugs"
+        if args.dataset_type == "tapvid":
+            experiment_name += f"_{args.query_mode}"
+        experiment_name += f"_{get_str_formatted_time()}"
+    else:
+        experiment_name = args.experiment_name + f"_{get_str_formatted_time()}"
+    print(f"experiment_name={experiment_name}")
 
-    writer_t = SummaryWriter(os.path.join(args.log_dir, model_name, "t"), max_queue=10, flush_secs=60)
+    writer_t = SummaryWriter(os.path.join(args.log_dir, experiment_name, "t"), max_queue=10, flush_secs=60)
     model = EvaluationModelFactory.get_model(args.modeltype, args.checkpoint_path, args.device,
                                              args.pips_stride, args.pips_window)
     dataloader = DataloaderFactory.get_dataloader(args.dataset_type, args.dataset_location, args.subset,
@@ -115,11 +120,11 @@ def evaluate(args):
             results_list += EvaluationModel.unpack_results(packed_results, batch_idx)
 
         iter_time = time.time() - iter_start_time
-        print(f'{model_name} step={batch_idx:06d} readtime={read_time:>2.2f} itertime={iter_time:>2.2f}')
+        print(f'{experiment_name} step={batch_idx:06d} readtime={read_time:>2.2f} itertime={iter_time:>2.2f}')
         read_start_time = time.time()
     writer_t.close()
 
-    save_results(results_list, args.log_dir, model_name, args.modeltype, args.mostly_visible_threshold)
+    save_results(results_list, args.log_dir, experiment_name, args.modeltype, args.mostly_visible_threshold)
 
 
 def evaluate_batch(modeltype: str, model: EvaluationModel, batch, summary_writer, dataset: str, device):
