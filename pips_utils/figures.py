@@ -280,7 +280,7 @@ def compute_summary(results: Dict) -> Dict:
         query_points=results["query_point"][None, None, :].numpy(),
         gt_occluded=~results["visibility_gt"][None, None, :].numpy(),
         gt_tracks=results["trajectory_gt"][None, None, :, :].numpy(),
-        pred_occluded=results["visibility_pred"][None, None, :].numpy(),
+        pred_occluded=~results["visibility_pred"][None, None, :].numpy(),
         pred_tracks=results["trajectory_pred"][None, None, :, :].numpy(),
         query_mode="first",
         additional_pck_thresholds=[
