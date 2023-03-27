@@ -44,26 +44,45 @@ class TAPVidIterator(torch.utils.data.Dataset):
         batch_size, n_frames, channels, height, width = rgbs.shape
         n_points = query_points.shape[1]
 
-        assert batch_size == 1
-        assert rgbs.shape == (batch_size, n_frames, channels, height, width)
-        assert query_points.shape == (batch_size, n_points, 3)
-        assert trajectories.shape == (batch_size, n_frames, n_points, 2)
-        assert visibilities.shape == (batch_size, n_frames, n_points)
-
         # Rescale from [-1,1] to [0,255]
         rgbs = (rgbs + 1) * 255 / 2
 
         # Convert query points from (t, y, x) to (t, x, y)
         query_points = query_points[:, :, [0, 2, 1]]
 
-        for point_idx, query_point in enumerate(query_points[0]):
-            if not torch.allclose(
-                    trajectories[0, int(query_point[0]), point_idx].float(),
-                    query_point[1:].float(),
-                    atol=0.51,
-            ):
-                print(
-                    f"WARNING: Query point does not match trajectory: {trajectories[0, int(query_point[0]), point_idx].float()} {query_point[1:].float()}")
+        # Ad hoc fix for Kubric reporting invisible query points when close to the crop boundary, e.g., x=110, y=-1e-5
+        for point_idx in range(n_points):
+            query_point = query_points[0, point_idx]
+            query_visible = visibilities[0, query_point[0].long(), point_idx]
+            if query_visible:
+                continue
+
+            x, y = query_point[1:]
+            x_at_boundary = min(abs(x - 0), abs(x - (width - 1))) < 1e-3
+            y_at_boundary = min(abs(y - 0), abs(y - (height - 1))) < 1e-3
+            x_inside_window = 0 <= x <= width - 1
+            y_inside_window = 0 <= y <= height - 1
+
+            if x_at_boundary and y_inside_window or x_inside_window and y_at_boundary or x_at_boundary and y_at_boundary:
+                visibilities[0, query_point[0].long(), point_idx] = 1
+
+        # Check dimensions are correct
+        assert batch_size == 1
+        assert rgbs.shape == (batch_size, n_frames, channels, height, width)
+        assert query_points.shape == (batch_size, n_points, 3)
+        assert trajectories.shape == (batch_size, n_frames, n_points, 2)
+        assert visibilities.shape == (batch_size, n_frames, n_points)
+
+        # Check that query points are visible
+        assert torch.all(visibilities[0, query_points[0, :, 0].long(), torch.arange(n_points)] == 1), \
+            "Query points must be visible"
+
+        # Check that query points are correct
+        assert torch.allclose(
+            query_points[0, :, 1:].float(),
+            trajectories[0, query_points[0, :, 0].long(), torch.arange(n_points)].float(),
+            atol=0.51,
+        )
 
         return {
             "rgbs": rgbs,
