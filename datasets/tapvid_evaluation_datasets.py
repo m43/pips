@@ -212,8 +212,8 @@ def compute_tapvid_metrics(
     count_visible_points = np.sum(
         visible & evaluation_points, axis=(1, 2))
     frac_correct = count_correct / count_visible_points
-    metrics['pts_within_' + str(thresh)] = frac_correct * 100
-    all_frac_within.append(frac_correct * 100)
+    metrics['pts_within_' + str(thresh)] = frac_correct
+    all_frac_within.append(frac_correct)
 
     true_positives = np.sum(
         is_correct & pred_visible & evaluation_points, axis=(1, 2))
@@ -240,7 +240,7 @@ def compute_tapvid_metrics(
     count_correct = np.sum(is_correct & evaluation_points, axis=(1, 2))
     count_visible_points = np.sum(visible & evaluation_points, axis=(1, 2))
     frac_correct = count_correct / count_visible_points
-    metrics['pts_within_' + str(thresh)] = frac_correct * 100
+    metrics['pts_within_' + str(thresh)] = frac_correct
 
   metrics['average_jaccard'] = np.mean(
       np.stack(all_jaccard, axis=1),

@@ -59,6 +59,7 @@ def get_parser():
     parser.add_argument('--experiment_name', type=str, default=None)
     parser.add_argument('--log_freq', type=int, default=50)
     parser.add_argument('--log_dir', type=str, default='logs')
+    parser.add_argument('--no_visualisations', action="store_true", default=False)
 
     # FlyingThings++ specific
     parser.add_argument('--flt_crop_size', type=int, nargs=2, default=(384, 512))
@@ -75,6 +76,7 @@ def evaluate(args):
 
     assert (args.modeltype == 'pips' or args.modeltype == 'raft' or args.modeltype == 'dino')
 
+    # TODO save the metadata to a file and read it from there
     if args.experiment_name is None:
         experiment_name = f"{args.batch_size:d}_{args.pips_window:d}_{args.n_points}_{args.modeltype:s}"
         experiment_name += f"_{args.seed}"
@@ -116,22 +118,34 @@ def evaluate(args):
         iter_start_time = time.time()
 
         with torch.no_grad():
-            packed_results = evaluate_batch(args.modeltype, model, batch, sw_t, args.dataset_type, args.device)
-            results_list += EvaluationModel.unpack_results(packed_results, batch_idx)
+            packed_results = evaluate_batch(args.modeltype, model, batch, args.dataset_type, args.device, sw_t,
+                                            args.no_visualisations)
+            unpacked_results = EvaluationModel.unpack_results(packed_results, batch_idx)
+            results_list += unpacked_results
+            summary_df = compute_summary_df(unpacked_results)
+            selected_metrics = ["ade_visible", "occlusion_accuracy", "average_jaccard", "average_pts_within_thresh"]
+            print(summary_df[selected_metrics].to_markdown())
 
         iter_time = time.time() - iter_start_time
         print(f'{experiment_name} step={batch_idx:06d} readtime={read_time:>2.2f} itertime={iter_time:>2.2f}')
         read_start_time = time.time()
     writer_t.close()
 
-    save_results(results_list, args.log_dir, experiment_name, args.modeltype, args.mostly_visible_threshold)
+    metadata = {
+        "name": args.modeltype,
+        "model": args.modeltype,
+        "dataset": f"{args.dataset_type}_{args.subset}",
+        "query_mode": args.query_mode,
+    }
+    save_results(results_list, args.log_dir, experiment_name, args.mostly_visible_threshold, metadata)
 
 
-def evaluate_batch(modeltype: str, model: EvaluationModel, batch, summary_writer, dataset: str, device):
+def evaluate_batch(modeltype: str, model: EvaluationModel, batch, dataset: str, device,
+                   summary_writer, no_visualisations: bool):
     rgbs, query_points, trajectories_gt, visibilities_gt = DataloaderFactory.unpack_batch(batch, dataset, modeltype,
                                                                                           device)
     results = model.evaluate_batch(trajectories_gt, visibilities_gt, rgbs, query_points, summary_writer)
-    if summary_writer is not None and summary_writer.save_this:
+    if not no_visualisations and summary_writer is not None and summary_writer.save_this:
         log_batch_visualisations(summary_writer, rgbs, results["trajectories_gt"], results["trajectories_pred"])
     return results
 
@@ -197,7 +211,7 @@ def log_batch_visualisations(summary_writer: pips_utils.improc.Summ_writer, rgbs
     )
 
 
-def save_results(results_list, log_dir, model_name, modeltype, mostly_visible_threshold):
+def save_results(results_list, log_dir, model_name, mostly_visible_threshold, metadata):
     # TODO: Save the results to a JSON file instead of a pickle file because it's more human-readable
     results_list_pkl_path = os.path.join(log_dir, model_name, "results_list.pkl")
     with open(results_list_pkl_path, "wb") as f:
@@ -209,7 +223,8 @@ def save_results(results_list, log_dir, model_name, modeltype, mostly_visible_th
     print(f"\nResults summary dataframe saved to:\n{results_df_path}\n")
     figures_dir = os.path.join(log_dir, model_name, "figures")
     ensure_dir(figures_dir)
-    results_df["name"] = modeltype
+    for k, v in metadata.items():
+        results_df[k] = v
     make_figures(results_df, figures_dir, mostly_visible_threshold)
 
 

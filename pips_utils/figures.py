@@ -204,9 +204,9 @@ def compute_summary(results: Dict) -> Dict:
         - 'n_timesteps': The length of the trajectory.
         - 'n_timesteps_visible': The number of visible points in the ground-truth trajectory.
         - 'n_timesteps_visible_chain': The number of visible points in the ground-truth trajectory, assuming a chain structure.
-        - 'occlusion_accuracy': TODO
-        - 'jaccard_i': TODO for i in [1,2,4,8,16]
-        - 'average_jaccard': TODO
+        - 'occlusion_accuracy': The ratio of correctly predicted point visibilities
+        - 'jaccard_i': TODO Define, for i in [1,2,4,8,16]
+        - 'average_jaccard': TODO Define
         - 'pts_within_i': PCK with a threshold of 'i' that does not scale the threshold relative to a body
            (e.g., a human), but measures in pixels. Computed for i in [1, 2, 4, 8, 16]
         - 'average_pts_within_thresh': The average of 'pts_within_i', for all i.
@@ -231,13 +231,13 @@ def compute_summary(results: Dict) -> Dict:
         'n_timesteps': 3,
         'n_timesteps_visible': 2,
         'n_timesteps_visible_chain': 2,
-        'occlusion_accuracy': 0.5,  # TODO dummy
-        'jaccard_1': 0.0,  # TODO dummy
-        'jaccard_2': 0.5,  # TODO dummy
-        'jaccard_4': 0.5,  # TODO dummy
-        'jaccard_8': 0.5,  # TODO dummy
-        'jaccard_16': 0.5,  # TODO dummy
-        'average_jaccard': 0.4,  # TODO dummy
+        'occlusion_accuracy': 0.5,
+        'jaccard_1': 0.0,
+        'jaccard_2': 0.5,
+        'jaccard_4': 0.5,
+        'jaccard_8': 0.5,
+        'jaccard_16': 0.5,
+        'average_jaccard': 0.4,
         'pts_within_1': 0.0,
         'pts_within_2': 1.0,
         'pts_within_4': 1.0,
@@ -290,7 +290,7 @@ def compute_summary(results: Dict) -> Dict:
             # 15, 20, 50, 100, 256,
         ],
     )
-    tapvid_metrics = {k: v.item() for k, v in tapvid_metrics.items()}
+    tapvid_metrics = {k: v.item() * 100 for k, v in tapvid_metrics.items()}
 
     summary.update(tapvid_metrics)
     return summary
@@ -572,18 +572,26 @@ def table2(
         df_list += [df_mostly_visible_ade, df_mostly_occluded_ade]
 
     if add_tapvid_metrics:
-        df_tapvid_metrics = df[["name",
-                                "pts_within_0.01", "pts_within_0.1", "pts_within_0.5",
-                                "pts_within_1", "pts_within_2", "pts_within_4", "pts_within_8", "pts_within_16",
-                                "average_pts_within_thresh"]].groupby(["name"]).mean()
+        df_tapvid_metrics = df[[
+            "name", "dataset", "model", "jaccard_1", "jaccard_2", "jaccard_4", "jaccard_8", "jaccard_16",
+            "pts_within_0.01", "pts_within_0.1", "pts_within_0.5",
+            "pts_within_1", "pts_within_2", "pts_within_4", "pts_within_8", "pts_within_16",
+            "occlusion_accuracy", "average_jaccard", "average_pts_within_thresh",
+        ]].groupby(["name", "dataset", "model"]).mean()
         df_list += [df_tapvid_metrics]
+
+        df[["name", "dataset", "model", "jaccard_1"]].groupby(["name", "dataset", "model"]).mean()
 
     table_df = df_list[0]
     for df_i in df_list[1:]:
         table_df = pd.merge(table_df, df_i, left_index=True, right_index=True)
         assert len(table_df) == len(df_list[0])
 
-    table_df = table_df.sort_values("ade_visible", ascending=False)
+    table_df.reset_index(inplace=True)
+    table_df.set_index(["dataset", "model"], inplace=True)
+    table_df = table_df.sort_values("name", ascending=True)
+    table_df.drop(columns=["name"], inplace=True)
+
     table_df.to_csv(os.path.join(output_path, f"{name}_threshold-{mostly_visible_threshold}.csv"))
 
     print(f"TABLE: '{name}'")
@@ -591,9 +599,9 @@ def table2(
     print()
 
     if create_heatmap:
-        fig, ax = plt.subplots(figsize=(12, 1.5 + 1 * len(table_df)))
+        fig, ax = plt.subplots(figsize=(6 + 1 * len(table_df), 12))
         fig.suptitle(name)
-        sns.heatmap(table_df, annot=True, linewidths=0.3, fmt=".2f", norm=LogNorm(vmin=3, vmax=80))
+        sns.heatmap(table_df.transpose(), annot=True, linewidths=0.3, fmt=".2f", norm=LogNorm(vmin=1, vmax=100))
         fig.autofmt_xdate()
         plt.tight_layout()
         plt.savefig(os.path.join(output_path, f"{name}.png"))
@@ -617,7 +625,7 @@ def table3(
     table_df = table_df.groupby(["name", "iter"]).mean()
     table_df = table_df.groupby(["name"]).mean()
 
-    table_df = table_df.sort_values("ade_visible", ascending=False)
+    table_df = table_df.sort_values("name", ascending=True)
     table_df.to_csv(os.path.join(output_path, f"{name}.csv"))
 
     print(f"TABLE: '{name}'")
@@ -625,7 +633,7 @@ def table3(
     print()
 
     if create_heatmap:
-        fig, ax = plt.subplots(figsize=(6, 1.5 + 1 * len(table_df)))
+        fig, ax = plt.subplots(figsize=(9, 3 + 1 * len(table_df)))
         fig.suptitle(name)
         sns.heatmap(table_df, annot=True, linewidths=0.3, fmt=".2f", norm=LogNorm(vmin=1, vmax=100))
         fig.autofmt_xdate()
@@ -674,6 +682,8 @@ def make_figures(df, output_path, mostly_visible_threshold):
     figure3(df, output_path, name="figure3")
     figure4(df, output_path, name="figure4")
 
+    print(f"Done. Figures saved to: {output_path}")
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -684,8 +694,6 @@ if __name__ == '__main__':
                              "while pickle files are generally larger and need to be computed to obtain the "
                              "dataframe. For consistency in the computation of metrics, it is suggested to use either "
                              "all pickle files or all dataframes.")
-    parser.add_argument("--results_name_list", nargs='+', required=True,
-                        help="List of names to be used to identify each run.")
     parser.add_argument("--mostly_visible_threshold", type=int, default=4,
                         help='Threshold used to define when a trajectory is "mostly visible" '
                              'compared to being "mostly occluded". The trajectory is mostly visible '
@@ -697,12 +705,31 @@ if __name__ == '__main__':
                         help="path to folder to save gifs to")
     args = parser.parse_args()
 
-    assert len(args.results_path_list) == len(args.results_name_list)
-    assert len(args.results_name_list) == len(set(args.results_name_list))
+    assert len(args.results_path_list) > 0, "At least one result path must be provided"
     ensure_dir(args.output_path)
 
     results_df_list = []
-    for path, name in zip(args.results_path_list, args.results_name_list, strict=True):
+    for path_idx, path in enumerate(args.results_path_list):
+
+        # Extract metadata from path
+        # Example of path: logs/1_8_None_pips_72_tapvid_davis_first_2023.03.27_06.36.35/results_list.pkl
+        # TODO save the metadata to a file and read it from there
+        try:
+            path_fixed = path.replace("rgb_stacking",
+                                      "rgb-stacking")  # TODO Ad hoc fix to make split work for rgb_stacking
+            path_parts = os.path.basename(os.path.dirname(path_fixed)).split("_")
+            batch_size, pips_window, n_points, modeltype, seed, dataset_type, subset, query_mode, date, time = path_parts
+
+            name = f"{modeltype}_{dataset_type}_{subset}"
+            dataset = f"{dataset_type}_{subset}" if dataset_type != "tapvid" else f"{subset}".upper()
+            model = f"{modeltype}-{pips_window}" if modeltype == "pips" else modeltype
+
+        except ValueError:
+            name = os.path.basename(os.path.dirname(path))
+            dataset = "unknown"
+            model = "unknown"
+            query_mode = "unknown"
+
         if path.endswith(".csv"):
             df = pd.read_csv(path)
         elif path.endswith(".pkl"):
@@ -737,7 +764,11 @@ if __name__ == '__main__':
             raise ValueError(f"The results path provided does not point to a `.csv` or `.pkl` file. "
                              f"The given path was: `{path}`")
 
-        df["name"] = name
+        df["name"] = f"{path_idx}__{name}"
+        df["model"] = model
+        df["dataset"] = dataset
+        df["query_mode"] = query_mode
+
         print(f"Loaded results df with name `{name}` from path `{path}`.")
         print(df.describe().transpose())
         print()
