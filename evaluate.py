@@ -11,10 +11,12 @@ python test_on_flt.py --modeltype dino --seed 123 --N 64
 ```
 """
 import argparse
+import json
 import os
 import pickle
 import time
 
+import pandas as pd
 import torch
 from tensorboardX import SummaryWriter
 
@@ -26,7 +28,7 @@ import pips_utils.test
 from datasets.factory import DataloaderFactory
 from evaluation_model.factory import EvaluationModelFactory
 from evaluation_model.model import EvaluationModel
-from pips_utils.figures import compute_summary_df, make_figures
+from pips_utils.figures import compute_summary_df, make_figures, compute_summary
 from pips_utils.util import ensure_dir, get_str_formatted_time, seed_all
 
 
@@ -60,6 +62,7 @@ def get_parser():
     parser.add_argument('--log_freq', type=int, default=50)
     parser.add_argument('--log_dir', type=str, default='logs')
     parser.add_argument('--no_visualisations', action="store_true", default=False)
+    parser.add_argument('--dont_save_raw_results', action="store_true", default=False)
 
     # FlyingThings++ specific
     parser.add_argument('--flt_crop_size', type=int, nargs=2, default=(384, 512))
@@ -91,7 +94,12 @@ def evaluate(args):
         experiment_name = args.experiment_name + f"_{get_str_formatted_time()}"
     print(f"experiment_name={experiment_name}")
 
-    writer_t = SummaryWriter(os.path.join(args.log_dir, experiment_name, "t"), max_queue=10, flush_secs=60)
+    output_dir = os.path.join(args.log_dir, experiment_name)
+    ensure_dir(output_dir)
+    with open(os.path.join(output_dir, "args.json"), "w", encoding="utf8") as f:
+        json.dump(vars(args), f, indent=4)
+
+    writer_t = SummaryWriter(os.path.join(output_dir, "t"), max_queue=10, flush_secs=60)
     model = EvaluationModelFactory.get_model(args.modeltype, args.checkpoint_path, args.device,
                                              args.pips_stride, args.pips_window)
     dataloader = DataloaderFactory.get_dataloader(args.dataset_type, args.dataset_location, args.subset,
@@ -99,6 +107,7 @@ def evaluate(args):
                                                   args.flt_crop_size, args.n_points, args.batch_size,
                                                   args.shuffle, args.dataloader_workers)
 
+    summaries = []
     results_list = []
     read_start_time = time.time()
     for batch_idx, batch in enumerate(dataloader):
@@ -121,10 +130,14 @@ def evaluate(args):
             packed_results = evaluate_batch(args.modeltype, model, batch, args.dataset_type, args.device, sw_t,
                                             args.no_visualisations)
             unpacked_results = EvaluationModel.unpack_results(packed_results, batch_idx)
-            results_list += unpacked_results
+            summaries += [compute_summary(res) for res in unpacked_results]
+
             summary_df = compute_summary_df(unpacked_results)
             selected_metrics = ["ade_visible", "occlusion_accuracy", "average_jaccard", "average_pts_within_thresh"]
             print(summary_df[selected_metrics].to_markdown())
+
+            if not args.dont_save_raw_results:
+                results_list += unpacked_results
 
         iter_time = time.time() - iter_start_time
         print(f'{experiment_name} step={batch_idx:06d} readtime={read_time:>2.2f} itertime={iter_time:>2.2f}')
@@ -137,7 +150,7 @@ def evaluate(args):
         "dataset": f"{args.dataset_type}_{args.subset}",
         "query_mode": args.query_mode,
     }
-    save_results(results_list, args.log_dir, experiment_name, args.mostly_visible_threshold, metadata)
+    save_results(summaries, results_list, output_dir, args.mostly_visible_threshold, metadata)
 
 
 def evaluate_batch(modeltype: str, model: EvaluationModel, batch, dataset: str, device,
@@ -211,20 +224,31 @@ def log_batch_visualisations(summary_writer: pips_utils.improc.Summ_writer, rgbs
     )
 
 
-def save_results(results_list, log_dir, model_name, mostly_visible_threshold, metadata):
-    # TODO: Save the results to a JSON file instead of a pickle file because it's more human-readable
-    results_list_pkl_path = os.path.join(log_dir, model_name, "results_list.pkl")
-    with open(results_list_pkl_path, "wb") as f:
-        print(f"\nResults pickle file saved to:\n{results_list_pkl_path}")
-        pickle.dump(results_list, f)
-    results_df_path = os.path.join(log_dir, model_name, "results_df.csv")
-    results_df = compute_summary_df(results_list)
+def save_results(summaries, results_list, output_dir, mostly_visible_threshold, metadata):
+    # Save summaries as a json file
+    summaries_path = os.path.join(output_dir, "summaries.json")
+    with open(summaries_path, "w", encoding="utf8") as f:
+        json.dump(summaries, f)
+    print(f"\nSummaries saved to:\n{summaries_path}\n")
+
+    # Save results summary dataframe as a csv file
+    results_df_path = os.path.join(output_dir, "results_df.csv")
+    results_df = pd.DataFrame.from_records(summaries)
     results_df.to_csv(results_df_path)
     print(f"\nResults summary dataframe saved to:\n{results_df_path}\n")
-    figures_dir = os.path.join(log_dir, model_name, "figures")
-    ensure_dir(figures_dir)
     for k, v in metadata.items():
         results_df[k] = v
+
+    # Save results list as a pickle file
+    if len(results_list) > 0:
+        results_list_pkl_path = os.path.join(output_dir, "results_list.pkl")
+        with open(results_list_pkl_path, "wb") as f:
+            print(f"\nResults pickle file saved to:\n{results_list_pkl_path}")
+            pickle.dump(results_list, f)
+
+    # Make figures
+    figures_dir = os.path.join(output_dir, "figures")
+    ensure_dir(figures_dir)
     make_figures(results_df, figures_dir, mostly_visible_threshold)
 
 
