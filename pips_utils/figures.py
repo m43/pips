@@ -321,12 +321,13 @@ def figure1(
         log_y: bool = False,
         save_pdf: bool = True,
         name: str = "figure1",
-        title: str = rf"ADE per visible chain length (w/ 95\% CI)"
+        title: str = rf"ADE per visible chain length (w/ 95\% CI)",
+        scale: float = 1.0,
 ) -> None:
     df = df.copy()
     df = df[df.n_timesteps_visible_chain > 1]
 
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(6 * scale, 4 * scale))
     fig.suptitle(title)
     sns.lineplot(
         df,
@@ -428,10 +429,11 @@ def figure3(
         log_y: bool = False,
         save_pdf: bool = True,
         name: str = "figure3",
-        title: str = rf"ADE per number of visible points (w/ 95\% CI)"
+        title: str = rf"ADE per number of visible points (w/ 95\% CI)",
+        scale: float = 1.0,
 ) -> None:
     df = df.copy()
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(6 * scale, 4 * scale))
     fig.suptitle(title)
     MetricLabelStyle = namedtuple("MetricLabelStle", ["metric", "label", "style"])
     metric_label_style_list = [MetricLabelStyle("ade", "ADE", "-"), MetricLabelStyle("ade_visible", "ADE Visible", ":")]
@@ -476,7 +478,8 @@ def figure4(
         log_y: bool = False,
         save_pdf: bool = True,
         name: str = "figure4",
-        title: str = rf"PCK per threshold across scenes (w/ 95\% CI)"
+        title: str = rf"PCK per threshold across scenes (w/ 95\% CI)",
+        scale: float = 1.0,
 ) -> None:
     df = df.copy()
 
@@ -485,7 +488,7 @@ def figure4(
     df = df.melt("name", var_name="threshold", value_name="pts_within_threshold")
     df.threshold = df.threshold.apply(lambda x: float(x.replace("pts_within_", "")))
 
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(6 * scale, 4 * scale))
     fig.suptitle(title)
     sns.lineplot(
         df,
@@ -591,17 +594,18 @@ def table2(
     table_df.set_index(["dataset", "model"], inplace=True)
     table_df = table_df.sort_values("name", ascending=True)
     table_df.drop(columns=["name"], inplace=True)
+    table_df = table_df.transpose()
 
     table_df.to_csv(os.path.join(output_path, f"{name}_threshold-{mostly_visible_threshold}.csv"))
 
     print(f"TABLE: '{name}'")
-    print(table_df.transpose().to_markdown())
+    print(table_df.to_markdown())
     print()
 
     if create_heatmap:
         fig, ax = plt.subplots(figsize=(6 + 1 * len(table_df), 12))
         fig.suptitle(name)
-        sns.heatmap(table_df.transpose(), annot=True, linewidths=0.3, fmt=".2f", norm=LogNorm(vmin=1, vmax=100))
+        sns.heatmap(table_df, annot=True, linewidths=0.3, fmt=".2f", norm=LogNorm(vmin=1, vmax=100))
         fig.autofmt_xdate()
         plt.tight_layout()
         plt.savefig(os.path.join(output_path, f"{name}.png"))
@@ -618,18 +622,22 @@ def table3(
 ) -> None:
     df = df.copy()
     df["iter"] = df.idx.apply(lambda x: x.split("--")[0])
-    table_df = df[["iter", "name", "ade_visible", "ade_occluded",
-                   "pts_within_0.01", "pts_within_0.1", "pts_within_0.5",
-                   "pts_within_1", "pts_within_2", "pts_within_4", "pts_within_8", "pts_within_16",
-                   "average_pts_within_thresh"]]
-    table_df = table_df.groupby(["name", "iter"]).mean()
-    table_df = table_df.groupby(["name"]).mean()
-
+    table_df = df[[
+        "iter", "name", "dataset", "model",
+        "ade", "ade_visible", "ade_occluded", "ade_visible_chain",
+        "jaccard_1", "jaccard_2", "jaccard_4", "jaccard_8", "jaccard_16",
+        "pts_within_0.01", "pts_within_0.1", "pts_within_0.5",
+        "pts_within_1", "pts_within_2", "pts_within_4", "pts_within_8", "pts_within_16",
+        "average_jaccard", "average_pts_within_thresh", "occlusion_accuracy",
+    ]]
+    table_df = table_df.groupby(["name", "dataset", "model", "iter"]).mean()
+    table_df = table_df.groupby(["name", "dataset", "model"]).mean()
     table_df = table_df.sort_values("name", ascending=True)
-    table_df.to_csv(os.path.join(output_path, f"{name}.csv"))
+    table_df = table_df.transpose()
 
+    table_df.to_csv(os.path.join(output_path, f"{name}.csv"))
     print(f"TABLE: '{name}'")
-    print(table_df.transpose().to_markdown())
+    print(table_df.to_markdown())
     print()
 
     if create_heatmap:
@@ -670,17 +678,17 @@ def make_figures(df, output_path, mostly_visible_threshold):
 
     # table1(df, output_path, "ade", name="table1")
     # table1(df, output_path, "ade_visible", name="table1")
-    table2(df, output_path, mostly_visible_threshold, name="table2-selected-metrics")
+    # table2(df, output_path, mostly_visible_threshold, name="table2-selected-metrics")
     table3(df, output_path, name="table3-pck-metrics")
 
-    figure1(df, output_path, name="figure1")
+    figure1(df, output_path, name="figure1", scale=3)
     # figure1(df, output_path, name="log__figure1")
     # figure2(df, output_path, "ade", name="figure2")
     # figure2(df, output_path, "ade_visible", name="figure2")
     # figure2(df, output_path, "ade", log_y=True, name="log__figure2")
     # figure2(df, output_path, "ade_visible", log_y=True, name="log__figure2")
-    figure3(df, output_path, name="figure3")
-    figure4(df, output_path, name="figure4")
+    figure3(df, output_path, name="figure3", scale=3)
+    figure4(df, output_path, name="figure4", scale=3)
 
     print(f"Done. Figures saved to: {output_path}")
 
