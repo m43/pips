@@ -509,3 +509,19 @@ python -m pips_utils.figures --mostly_visible_threshold 4 --results_path_list \
 
 
 ```
+
+## Visualize trajectories per dataset per point category (standard, hard, easy)
+
+```bash
+# export CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt
+
+python -m evaluate --modeltype pips --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first --log_freq 1 --max_iter 30 --wandb_project evaluation-tapvid-trajectories
+python -m evaluate --modeltype pips --dataset_type tapvid --dataset_location none --subset kubric --query_mode first --log_freq 1 --max_iter 30 --wandb_project evaluation-tapvid-trajectories
+python -m evaluate --modeltype pips --dataset_type tapvid --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl --subset rgb_stacking --query_mode first --log_freq 1 --max_iter 30 --wandb_project evaluation-tapvid-trajectories
+python -m evaluate --modeltype pips --dataset_type tapvid --dataset_location data/tapvid_kinetics --subset kinetics --query_mode first --log_freq 1 --max_iter 30 --wandb_project evaluation-tapvid-trajectories
+
+python -m evaluate --modeltype raft --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first --log_freq 1 --max_iter 30 --wandb_project evaluation-tapvid-trajectories
+python -m evaluate --modeltype raft --dataset_type tapvid --dataset_location none --subset kubric --query_mode first --log_freq 1 --max_iter 30 --wandb_project evaluation-tapvid-trajectories
+python -m evaluate --modeltype raft --dataset_type tapvid --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl --subset rgb_stacking --query_mode first --log_freq 1 --max_iter 30 --wandb_project evaluation-tapvid-trajectories
+python -m evaluate --modeltype raft --dataset_type tapvid --dataset_location data/tapvid_kinetics --subset kinetics --query_mode first --log_freq 1 --max_iter 30 --wandb_project evaluation-tapvid-trajectories
+```
