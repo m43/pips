@@ -18,7 +18,7 @@ class PipsEvaluationModel(EvaluationModel):
 
         print(f"Loading PIPS model from {self.checkpoint_path}")
         self.model = Pips(S=s, stride=stride)
-        self._loaded_checkpoint_step = saverloader.load(self.checkpoint_path, self.model)
+        self._loaded_checkpoint_step = saverloader.load(self.checkpoint_path, self.model, device)
         self.model = self.model.to(device)
         self.model.eval()
 
@@ -112,9 +112,6 @@ class PipsEvaluationModel(EvaluationModel):
             # 3. Update the state
             output_frame_slice = slice(1, self.s - n_missing_rgbs)
             predicted_frame_slice = slice(1 + current_frame, current_frame + self.s - n_missing_rgbs)
-            if visibilities[predicted_frame_slice, forward_pass_points].shape != output_visibility[0,
-                                                                                 output_frame_slice, :].shape:
-                breakpoint()
             visibilities[predicted_frame_slice, forward_pass_points] = output_visibility[0, output_frame_slice, :]
             trajectories[predicted_frame_slice, forward_pass_points, :] = output_trajectory[0, output_frame_slice, :, :]
 

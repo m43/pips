@@ -59,6 +59,7 @@ class EvaluationModel(ABC):
         for b in range(packed_results["trajectories_gt"].shape[0]):
             for n in range(packed_results["trajectories_gt"].shape[2]):
                 result = {
+                    "idx": f"{batch_idx}_{b}_{n}",
                     "iter": batch_idx,
                     "video_idx": b,
                     "point_idx_in_video": n,

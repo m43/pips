@@ -426,8 +426,6 @@ class Pips(nn.Module):
         )
 
     def forward(self, xys, rgbs, coords_init=None, feat_init=None, iters=3, trajs_g=None, vis_g=None, valids=None, sw=None, return_feat=False, is_train=False):
-        total_loss = torch.tensor(0.0).cuda()
-
         B, N, D = xys.shape
         assert(D==2)
 
@@ -454,8 +452,6 @@ class Pips(nn.Module):
         else:
             coords = coords_init.clone() / self.stride
 
-        hdim = self.hidden_dim
-
         fcorr_fn = CorrBlock(fmaps, num_levels=self.corr_levels, radius=self.corr_radius)
 
         if feat_init is None:
@@ -475,7 +471,6 @@ class Pips(nn.Module):
         coord_predictions2.append(coords.detach() * self.stride)
 
         fcps = []
-        ccps = []
         kps = []
 
         if sw is not None and sw.save_this:
