@@ -113,7 +113,7 @@ python -m evaluate --modeltype pips --dataset_type tapvid --dataset_location dat
 python -m evaluate --modeltype pips --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first   --log_freq 1
 
 # KUBRIC (250 batches)
-export CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt
+# export CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt
 python -m evaluate --modeltype raft --dataset_type tapvid --dataset_location none --subset kubric --query_mode strided
 python -m evaluate --modeltype raft --dataset_type tapvid --dataset_location none --subset kubric --query_mode first  
 python -m evaluate --modeltype pips --dataset_type tapvid --dataset_location none --subset kubric --query_mode strided
@@ -229,4 +229,283 @@ python -m pips_utils.figures --mostly_visible_threshold 4 --results_path_list \
 # | occlusion_accuracy        |                                    76.1238    |                                 0.273583    |                                     87.7514     |                                   0.110541    |                                                 83.3483     |                                               0.158505    |                                          67.4002    |                                       0.257191    |
 # 
 # Done. Figures saved to: logs/figures/2023.03.31_03.27.19
+```
+
+## Visualize Trajectories to Identify Failure Cases
+
+Run the evaluation for the first 3 scenes and find the visualisations in tensorboard logs:
+```bash
+python -m evaluate --modeltype pips --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first --log_freq 1 --max_iter 3
+```
+
+## Training on Kubric
+
+Training from scratch with three different learning rate settings:
+```bash
+# FLT++
+python train.py --max_iters 200000 --B=1 --lr 5e-4
+
+# export CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt
+python train.py --dataset_type tapvid-chunked --dataset_location data/tapvid_kubric --subset_train kubric-train --subset_valid kubric --max_iters 200000 --B=1 --lr 5e-5
+python train.py --dataset_type tapvid-chunked --dataset_location data/tapvid_kubric --subset_train kubric-train --subset_valid kubric --max_iters 200000 --B=1 --lr 5e-4
+python train.py --dataset_type tapvid-chunked --dataset_location data/tapvid_kubric --subset_train kubric-train --subset_valid kubric --max_iters 200000 --B=1 --lr 5e-3
+
+# logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.07.04
+# logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.06.46
+# logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-3_A_debug_2023.04.02_15.06.47
+
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.07.04 --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.07.04 --dataset_type tapvid --dataset_location none --subset kubric --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.07.04 --dataset_type tapvid --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl --subset rgb_stacking --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.07.04 --dataset_type tapvid --dataset_location data/tapvid_kinetics --subset kinetics --query_mode first  
+# 1_8_None_pips_72_tapvid_davis_first_2023.04.03_09.29.24
+# 1_8_None_pips_72_tapvid_kubric_first_2023.04.03_09.29.28
+# 1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_09.29.33
+# 1_8_None_pips_72_tapvid_kinetics_first_2023.04.03_09.29.37
+python -m pips_utils.figures --mostly_visible_threshold 4 --results_path_list \
+  logs/1_8_None_pips_72_tapvid_davis_first_2023.04.03_09.29.24/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_kubric_first_2023.04.03_09.29.28/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_09.29.33/results_df.csv
+# TABLE: 'table3-pck-metrics'
+# |                           |   ('0__pips_tapvid_davis', 'DAVIS', 'pips-8') |   ('1__pips_tapvid_kubric', 'KUBRIC', 'pips-8') |   ('2__pips_tapvid_rgb-stacking', 'RGB-STACKING', 'pips-8') |
+# |:--------------------------|----------------------------------------------:|------------------------------------------------:|------------------------------------------------------------:|
+# | ade                       |                                     66.8994   |                                      9.18836    |                                                 17.8319     |
+# | ade_visible               |                                     14.9606   |                                      4.8918     |                                                 12.9553     |
+# | ade_occluded              |                                    177.484    |                                     22.4812     |                                                 29.4196     |
+# | ade_visible_chain         |                                      7.83264  |                                      3.81523    |                                                  8.56763    |
+# | jaccard_1                 |                                      7.48129  |                                     25.3345     |                                                  4.13305    |
+# | jaccard_2                 |                                     17.1349   |                                     49.7926     |                                                  9.76714    |
+# | jaccard_4                 |                                     32.0398   |                                     66.7062     |                                                 21.2501     |
+# | jaccard_8                 |                                     45.4194   |                                     75.8929     |                                                 37.9763     |
+# | jaccard_16                |                                     53.275    |                                     80.8137     |                                                 56.4692     |
+# | pts_within_0.01           |                                      0        |                                      0.00632069 |                                                  0.00382214 |
+# | pts_within_0.1            |                                      0.328671 |                                      0.570098   |                                                  0.406061   |
+# | pts_within_0.5            |                                      5.58236  |                                     10.3824     |                                                  4.01933    |
+# | pts_within_1              |                                     14.5136   |                                     35.2263     |                                                  9.20824    |
+# | pts_within_2              |                                     29.7198   |                                     60.5215     |                                                 18.7458     |
+# | pts_within_4              |                                     49.8224   |                                     77.1815     |                                                 34.7063     |
+# | pts_within_8              |                                     65.4831   |                                     86.9984     |                                                 54.3838     |
+# | pts_within_16             |                                     75.7181   |                                     92.9072     |                                                 74.3588     |
+# | average_jaccard           |                                     31.0701   |                                     59.708      |                                                 25.9192     |
+# | average_pts_within_thresh |                                     47.0514   |                                     70.567      |                                                 38.2806     |
+# | occlusion_accuracy        |                                     76.1739   |                                     88.5859     |                                                 83.1172     |
+
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.06.46 --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.06.46 --dataset_type tapvid --dataset_location none --subset kubric --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.06.46 --dataset_type tapvid --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl --subset rgb_stacking --query_mode first  
+# 1_8_None_pips_72_tapvid_davis_first_2023.04.03_10.40.43
+# 1_8_None_pips_72_tapvid_kubric_first_2023.04.03_10.41.00
+# 1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_10.41.17
+python -m pips_utils.figures --mostly_visible_threshold 4 --results_path_list \
+  logs/1_8_None_pips_72_tapvid_davis_first_2023.04.03_10.40.43/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_kubric_first_2023.04.03_10.41.00/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_10.41.17/results_df.csv
+# TABLE: 'table3-pck-metrics'
+# |                           |   ('0__pips_tapvid_davis', 'DAVIS', 'pips-8') |   ('1__pips_tapvid_kubric', 'KUBRIC', 'pips-8') |   ('2__pips_tapvid_rgb-stacking', 'RGB-STACKING', 'pips-8') |
+# |:--------------------------|----------------------------------------------:|------------------------------------------------:|------------------------------------------------------------:|
+# | ade                       |                                   69.9408     |                                      9.72678    |                                                 16.9478     |
+# | ade_visible               |                                   17.4707     |                                      5.3563     |                                                 12.2655     |
+# | ade_occluded              |                                  181.417      |                                     23.6842     |                                                 29.3814     |
+# | ade_visible_chain         |                                    8.79814    |                                      4.15294    |                                                  7.28432    |
+# | jaccard_1                 |                                    6.70658    |                                     24.8443     |                                                  4.26348    |
+# | jaccard_2                 |                                   15.2856     |                                     48.5795     |                                                 10.7812     |
+# | jaccard_4                 |                                   28.7727     |                                     65.5624     |                                                 24.0301     |
+# | jaccard_8                 |                                   41.8762     |                                     75.0178     |                                                 42.8692     |
+# | jaccard_16                |                                   50.8359     |                                     79.9472     |                                                 59.8077     |
+# | pts_within_0.01           |                                    0.00811966 |                                      0.00592115 |                                                  0.00304862 |
+# | pts_within_0.1            |                                    0.481478   |                                      0.542375   |                                                  0.348345   |
+# | pts_within_0.5            |                                    5.84539    |                                      9.63866    |                                                  3.92568    |
+# | pts_within_1              |                                   13.4866     |                                     34.1527     |                                                  9.32965    |
+# | pts_within_2              |                                   27.2023     |                                     59.1781     |                                                 20.345      |
+# | pts_within_4              |                                   45.3816     |                                     76.1846     |                                                 37.942      |
+# | pts_within_8              |                                   61.0989     |                                     86.2884     |                                                 59.542      |
+# | pts_within_16             |                                   72.8692     |                                     92.3354     |                                                 77.3803     |
+# | average_jaccard           |                                   28.6954     |                                     58.7902     |                                                 28.3503     |
+# | average_pts_within_thresh |                                   44.0077     |                                     69.6278     |                                                 40.9078     |
+# | occlusion_accuracy        |                                   75.7947     |                                     87.9668     |                                                 82.0991     |
+
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-3_A_debug_2023.04.02_15.06.47 --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-3_A_debug_2023.04.02_15.06.47 --dataset_type tapvid --dataset_location none --subset kubric --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-3_A_debug_2023.04.02_15.06.47 --dataset_type tapvid --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl --subset rgb_stacking --query_mode first  
+# 1_8_None_pips_72_tapvid_davis_first_2023.04.03_10.42.33
+# 1_8_None_pips_72_tapvid_kubric_first_2023.04.03_10.42.40
+# 1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_10.43.07
+python -m pips_utils.figures --mostly_visible_threshold 4 --results_path_list \
+  logs/1_8_None_pips_72_tapvid_davis_first_2023.04.03_10.42.33/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_kubric_first_2023.04.03_10.42.40/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_10.43.07/results_df.csv
+# TABLE: 'table3-pck-metrics'
+# |                           |   ('0__pips_tapvid_davis', 'DAVIS', 'pips-8') |   ('1__pips_tapvid_kubric', 'KUBRIC', 'pips-8') |   ('2__pips_tapvid_rgb-stacking', 'RGB-STACKING', 'pips-8') |
+# |:--------------------------|----------------------------------------------:|------------------------------------------------:|------------------------------------------------------------:|
+# | ade                       |                                   69.6829     |                                     10.1157     |                                                 20.1573     |
+# | ade_visible               |                                   18.466      |                                      6.06368    |                                                 15.0504     |
+# | ade_occluded              |                                  178.522      |                                     23.9577     |                                                 31.3351     |
+# | ade_visible_chain         |                                    9.95295    |                                      4.81975    |                                                  9.6458     |
+# | jaccard_1                 |                                    5.21543    |                                     17.4833     |                                                  3.52874    |
+# | jaccard_2                 |                                   12.5933     |                                     41.1527     |                                                  8.61705    |
+# | jaccard_4                 |                                   26.0252     |                                     60.1279     |                                                 19.7403     |
+# | jaccard_8                 |                                   38.7457     |                                     71.5531     |                                                 34.8082     |
+# | jaccard_16                |                                   48.1484     |                                     77.5899     |                                                 51.3512     |
+# | pts_within_0.01           |                                    0.00533333 |                                      0.00300215 |                                                  0.00131099 |
+# | pts_within_0.1            |                                    0.243027   |                                      0.309458   |                                                  0.203457   |
+# | pts_within_0.5            |                                    4.18291    |                                      6.157      |                                                  3.35111    |
+# | pts_within_1              |                                   10.4648     |                                     25.6776     |                                                  8.15465    |
+# | pts_within_2              |                                   22.5881     |                                     51.8481     |                                                 17.1347     |
+# | pts_within_4              |                                   40.5811     |                                     71.2277     |                                                 32.8489     |
+# | pts_within_8              |                                   57.1771     |                                     83.6013     |                                                 51.6662     |
+# | pts_within_16             |                                   70.6294     |                                     91.1277     |                                                 70.0021     |
+# | average_jaccard           |                                   26.1456     |                                     53.5814     |                                                 23.6091     |
+# | average_pts_within_thresh |                                   40.2881     |                                     64.6965     |                                                 35.9613     |
+# | occlusion_accuracy        |                                   73.0889     |                                     86.4645     |                                                 82.2685     |
+```
+
+Finetuning the PIPS checkpoint for three different values of the learning rate:
+```bash
+python train.py --dataset_type tapvid-chunked --dataset_location data/tapvid_kubric --subset_train kubric-train --subset_valid kubric --init_dir reference_model --load_optimizer True --load_step True --max_iters 250000 --B=1 --lr 5e-4
+python train.py --dataset_type tapvid-chunked --dataset_location data/tapvid_kubric --subset_train kubric-train --subset_valid kubric --init_dir reference_model --load_optimizer True --max_iters 50000 --B=1 --lr 5e-5
+python train.py --dataset_type tapvid-chunked --dataset_location data/tapvid_kubric --subset_train kubric-train --subset_valid kubric --init_dir reference_model --load_optimizer True --max_iters 50000 --B=1 --lr 5e-6
+# logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.07.18
+# logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.19.05
+# logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-6_A_debug_2023.04.02_15.07.17
+
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.07.18 --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first   --log_freq 1
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.07.18 --dataset_type tapvid --dataset_location none --subset kubric --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.07.18 --dataset_type tapvid --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl --subset rgb_stacking --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.07.18 --dataset_type tapvid --dataset_location data/tapvid_kinetics --subset kinetics --query_mode first  
+# logs/1_8_None_pips_72_tapvid_davis_first_2023.04.03_00.39.13/results_df.csv
+# logs/1_8_None_pips_72_tapvid_kubric_first_2023.04.03_00.39.16/results_df.csv
+# logs/1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_00.40.05/results_df.csv
+# logs/1_8_None_pips_72_tapvid_kinetics_first_2023.04.03_00.44.43/results_df.csv
+python -m pips_utils.figures --mostly_visible_threshold 4 --results_path_list \
+  logs/1_8_None_pips_72_tapvid_davis_first_2023.04.03_00.39.13/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_kubric_first_2023.04.03_00.39.16/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_00.40.05/results_df.csv
+  TABLE: 'table3-pck-metrics'
+# |                           |   ('0__pips_tapvid_davis', 'DAVIS', 'pips-8') |   ('1__pips_tapvid_kubric', 'KUBRIC', 'pips-8') |   ('2__pips_tapvid_rgb-stacking', 'RGB-STACKING', 'pips-8') |
+# |:--------------------------|----------------------------------------------:|------------------------------------------------:|------------------------------------------------------------:|
+# | ade                       |                                    66.8165    |                                     10.4113     |                                                19.821       |
+# | ade_visible               |                                    15.9035    |                                      4.67213    |                                                15.5134      |
+# | ade_occluded              |                                   175.739     |                                     26.4425     |                                                29.4764      |
+# | ade_visible_chain         |                                     7.74776   |                                      3.58124    |                                                10.3858      |
+# | jaccard_1                 |                                     5.29771   |                                     13.7317     |                                                 2.04148     |
+# | jaccard_2                 |                                    13.1285    |                                     41.5484     |                                                 5.60477     |
+# | jaccard_4                 |                                    26.7023    |                                     64.7561     |                                                13.8445      |
+# | jaccard_8                 |                                    41.983     |                                     76.1274     |                                                30.2123      |
+# | jaccard_16                |                                    52.1758    |                                     81.0443     |                                                49.5183      |
+# | pts_within_0.01           |                                     0.0047619 |                                      0.00155196 |                                                 0.000267738 |
+# | pts_within_0.1            |                                     0.114513  |                                      0.199799   |                                                 0.114452    |
+# | pts_within_0.5            |                                     3.98179   |                                      5.14062    |                                                 1.86299     |
+# | pts_within_1              |                                    10.7309    |                                     21.3386     |                                                 4.96504     |
+# | pts_within_2              |                                    24.1047    |                                     53.458      |                                                12.0801      |
+# | pts_within_4              |                                    43.4856    |                                     75.9279     |                                                25.4458      |
+# | pts_within_8              |                                    62.8233    |                                     87.9085     |                                                47.5282      |
+# | pts_within_16             |                                    77.7082    |                                     94.1404     |                                                69.5235      |
+# | average_jaccard           |                                    27.8575    |                                     55.4416     |                                                20.2443      |
+# | average_pts_within_thresh |                                    43.7705    |                                     66.5547     |                                                31.9085      |
+# | occlusion_accuracy        |                                    71.6156    |                                     87.8709     |                                                80.1063      |
+
+
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.19.05 --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first   --log_freq 1
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.19.05 --dataset_type tapvid --dataset_location none --subset kubric --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.19.05 --dataset_type tapvid --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl --subset rgb_stacking --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.19.05 --dataset_type tapvid --dataset_location data/tapvid_kinetics --subset kinetics --query_mode first  
+# 1_8_None_pips_72_tapvid_davis_first_2023.04.03_00.44.54
+# 1_8_None_pips_72_tapvid_kubric_first_2023.04.03_00.45.52
+# 1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_00.47.56
+# 1_8_None_pips_72_tapvid_kinetics_first_2023.04.03_00.48.00
+python -m pips_utils.figures --mostly_visible_threshold 4 --results_path_list \
+  logs/1_8_None_pips_72_tapvid_davis_first_2023.04.03_00.44.54/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_kubric_first_2023.04.03_00.45.52/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_00.47.56/results_df.csv
+# TABLE: 'table3-pck-metrics'
+# |                           |   ('0__pips_tapvid_davis', 'DAVIS', 'pips-8') |   ('1__pips_tapvid_kubric', 'KUBRIC', 'pips-8') |   ('2__pips_tapvid_rgb-stacking', 'RGB-STACKING', 'pips-8') |
+# |:--------------------------|----------------------------------------------:|------------------------------------------------:|------------------------------------------------------------:|
+# | ade                       |                                   64.0511     |                                     12.5006     |                                                  18.0782    |
+# | ade_visible               |                                   11.3549     |                                      3.6459     |                                                  14.3461    |
+# | ade_occluded              |                                  177.164      |                                     26.2897     |                                                  24.7816    |
+# | ade_visible_chain         |                                    6.07549    |                                      2.86753    |                                                  10.253     |
+# | jaccard_1                 |                                    5.13517    |                                     17.7128     |                                                   2.23988   |
+# | jaccard_2                 |                                   13.6006     |                                     44.7915     |                                                   5.61954   |
+# | jaccard_4                 |                                   30.8308     |                                     69.9393     |                                                  13.2043    |
+# | jaccard_8                 |                                   50.3454     |                                     82.0667     |                                                  29.9091    |
+# | jaccard_16                |                                   63.2797     |                                     86.255      |                                                  50.651     |
+# | pts_within_0.01           |                                    0.00246914 |                                      0.00365241 |                                                   0.0359524 |
+# | pts_within_0.1            |                                    0.200504   |                                      0.336546   |                                                   0.191372  |
+# | pts_within_0.5            |                                    3.65793    |                                      7.55928    |                                                   2.40987   |
+# | pts_within_1              |                                   10.4971     |                                     26.834      |                                                   5.96326   |
+# | pts_within_2              |                                   25.1854     |                                     56.8913     |                                                  12.5911    |
+# | pts_within_4              |                                   48.5736     |                                     80.4795     |                                                  24.8339    |
+# | pts_within_8              |                                   71.0335     |                                     91.7381     |                                                  46.347     |
+# | pts_within_16             |                                   84.9991     |                                     96.3597     |                                                  69.3215    |
+# | average_jaccard           |                                   32.6383     |                                     60.1531     |                                                  20.3248    |
+# | average_pts_within_thresh |                                   48.0577     |                                     70.4605     |                                                  31.8114    |
+# | occlusion_accuracy        |                                   79.2124     |                                     91.1377     |                                                  83.7102    |
+
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-6_A_debug_2023.04.02_15.07.17 --dataset_type tapvid --dataset_location data/tapvid_davis/tapvid_davis.pkl --subset davis --query_mode first   --log_freq 1
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-6_A_debug_2023.04.02_15.07.17 --dataset_type tapvid --dataset_location none --subset kubric --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-6_A_debug_2023.04.02_15.07.17 --dataset_type tapvid --dataset_location data/tapvid_rgb_stacking/tapvid_rgb_stacking.pkl --subset rgb_stacking --query_mode first  
+python -m evaluate --modeltype pips --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-6_A_debug_2023.04.02_15.07.17 --dataset_type tapvid --dataset_location data/tapvid_kinetics --subset kinetics --query_mode first  
+# 1_8_None_pips_72_tapvid_davis_first_2023.04.03_00.49.49
+# 1_8_None_pips_72_tapvid_kubric_first_2023.04.03_00.49.53
+# 1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_00.49.56
+# 1_8_None_pips_72_tapvid_kinetics_first_2023.04.03_00.50.00
+python -m pips_utils.figures --mostly_visible_threshold 4 --results_path_list \
+  logs/1_8_None_pips_72_tapvid_davis_first_2023.04.03_00.49.49/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_kubric_first_2023.04.03_00.49.53/results_df.csv \
+  logs/1_8_None_pips_72_tapvid_rgb_stacking_first_2023.04.03_00.49.56/results_df.csv
+# |                           |   ('0__pips_tapvid_davis', 'DAVIS', 'pips-8') |   ('1__pips_tapvid_kubric', 'KUBRIC', 'pips-8') |   ('2__pips_tapvid_rgb-stacking', 'RGB-STACKING', 'pips-8') |
+# |:--------------------------|----------------------------------------------:|------------------------------------------------:|------------------------------------------------------------:|
+# | ade                       |                                     64.0612   |                                      7.32331    |                                                 15.9427     |
+# | ade_visible               |                                      9.83197  |                                      3.46685    |                                                 11.6705     |
+# | ade_occluded              |                                    180.667    |                                     18.0969     |                                                 24.5902     |
+# | ade_visible_chain         |                                      5.15454  |                                      2.68642    |                                                  7.94242    |
+# | jaccard_1                 |                                      6.80641  |                                     19.0881     |                                                  2.96895    |
+# | jaccard_2                 |                                     17.2271   |                                     48.7124     |                                                  7.45769    |
+# | jaccard_4                 |                                     36.3449   |                                     72.6142     |                                                 18.0976     |
+# | jaccard_8                 |                                     58.0345   |                                     82.4576     |                                                 38.6585     |
+# | jaccard_16                |                                     67.2292   |                                     86.0041     |                                                 59.3845     |
+# | pts_within_0.01           |                                      0        |                                      0.00397133 |                                                  0.00189043 |
+# | pts_within_0.1            |                                      0.164743 |                                      0.334542   |                                                  0.153338   |
+# | pts_within_0.5            |                                      4.57935  |                                      8.01407    |                                                  2.87367    |
+# | pts_within_1              |                                     13.4753   |                                     28.6128     |                                                  7.39973    |
+# | pts_within_2              |                                     30.0282   |                                     60.6205     |                                                 15.9429     |
+# | pts_within_4              |                                     54.3677   |                                     82.4288     |                                                 31.7942     |
+# | pts_within_8              |                                     77.4692   |                                     92.0969     |                                                 56.2518     |
+# | pts_within_16             |                                     88.1974   |                                     96.4016     |                                                 77.7463     |
+# | average_jaccard           |                                     37.1284   |                                     61.7753     |                                                 25.3135     |
+# | average_pts_within_thresh |                                     52.7076   |                                     72.0321     |                                                 37.8269     |
+# | occlusion_accuracy        |                                     80.2266   |                                     90.8563     |                                                 83.2159     |
+```
+
+Did the performance on tapvid_chunked kubric improve as it should since we trained on it?
+```bash
+ssh i58
+export CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt
+export CUDA_VISIBLE_DEVICES=0
+source pips.sh
+
+# Sanity check
+python -m evaluate --modeltype pips --dataset_type tapvid-chunked --dataset_location none --subset kubric --query_mode first
+# logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.42.49/figures
+
+python -m evaluate --modeltype pips --dataset_type tapvid-chunked --dataset_location none --subset kubric --query_mode first --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-4_A_debug_2023.04.02_15.07.18
+python -m evaluate --modeltype pips --dataset_type tapvid-chunked --dataset_location none --subset kubric --query_mode first --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.19.05
+python -m evaluate --modeltype pips --dataset_type tapvid-chunked --dataset_location none --subset kubric --query_mode first --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-6_A_debug_2023.04.02_15.07.17
+# logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.42.24/figures
+# logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.58.54/figures
+# logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.58.31/figures
+
+python -m evaluate --modeltype pips --dataset_type tapvid-chunked --dataset_location none --subset kubric --query_mode first --checkpoint_path logs/my_pips/checkpoints/1_8_768_72_tapvid-chunked_train=kubric-train_val=kubric4hv_I4_5e-5_A_debug_2023.04.02_15.07.04
+# logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.58.37/figures
+# 
+# 
+
+python -m pips_utils.figures --mostly_visible_threshold 4 --results_path_list \
+  logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.42.49/results_df.csv \
+  logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.42.24/results_df.csv \
+  logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.58.54/results_df.csv \
+  logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.58.31/results_df.csv \
+  logs/1_8_None_pips_72_tapvid-chunked_kubric_2023.04.03_09.58.37/results_df.csv
+
+
 ```

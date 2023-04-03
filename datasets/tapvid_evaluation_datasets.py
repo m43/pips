@@ -20,23 +20,19 @@
 
 """Evaluation dataset creation functions."""
 
-import csv
-import functools
 import io
-import os
-from os import path
 import pickle
 import random
+from os import path
 from typing import Iterable, Mapping, Tuple, Union, Sequence
-
-from absl import logging
 
 import mediapy as media
 import numpy as np
-from PIL import Image
 import scipy.io as sio
 import tensorflow as tf
 import tensorflow_datasets as tfds
+from PIL import Image
+from absl import logging
 
 DatasetElement = Mapping[str, Mapping[str, Union[np.ndarray, str]]]
 
@@ -515,11 +511,13 @@ def create_kubric_eval_train_dataset(
       random_crop=False,
   )
 
+  # TODO I have removed res[0]() as it is not supported anymore. Double check what it was doing.
+  np_ds = tfds.as_numpy(res)
   num_returned = 0
-
-  for data in res[0]():
-    if num_returned >= max_dataset_size:
-      break
+  for data in np_ds:
+    if max_dataset_size is not None and num_returned >= max_dataset_size:
+        print(f"Kubric: Took {max_dataset_size} videos out of len(np_ds)={len(np_ds)} videos in total.")
+        break
     num_returned += 1
     yield {'kubric': data}
 

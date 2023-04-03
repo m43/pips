@@ -2,7 +2,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from datasets.flyingthings import FlyingThingsDataset
-from datasets.tapvid import TAPVidIterator
+from datasets.tapvid import TAPVidIterator, TAPVidChunkedDataset
 from pips_utils.util import worker_seed_init_fn
 
 
@@ -11,14 +11,16 @@ class DataloaderFactory:
     def get_dataloader(cls, name, dataset_location, subset, query_mode, pips_window, flt_use_augs, flt_crop_size,
                        n_points, batch_size, shuffle, dataloader_workers):
         if name == "flyingthings++":
+            subset, dset = subset.split("-", maxsplit=1)  # e.g., all-train -> all, train
+            dset = dset.upper()
             dataset = FlyingThingsDataset(
                 dataset_location=dataset_location,
-                dset='TEST', subset=subset,
+                dset=dset, subset=subset,
                 use_augs=flt_use_augs,
                 N=n_points, S=pips_window,
                 crop_size=flt_crop_size,
             )
-            test_dataloader = DataLoader(
+            dataloader = DataLoader(
                 dataset,
                 batch_size=batch_size,
                 shuffle=shuffle,
@@ -28,7 +30,10 @@ class DataloaderFactory:
             )
 
         elif name == "tapvid":
-            test_dataloader = TAPVidIterator(dataset_location, subset, query_mode)
+            dataloader = TAPVidIterator(dataset_location, subset, query_mode)
+
+        elif name == "tapvid-chunked":
+            dataloader = TAPVidChunkedDataset(dataset_location, subset, pips_window)
 
         elif name == "crohd":
             raise NotImplementedError()
@@ -36,7 +41,7 @@ class DataloaderFactory:
         else:
             raise ValueError(f"Invalid dataset type given: `{name}`")
 
-        return test_dataloader
+        return dataloader
 
     @classmethod
     def unpack_batch(cls, batch, dataset, modeltype, device):
@@ -71,7 +76,7 @@ class DataloaderFactory:
             trajectories_gt[:, :, :, 0] *= sx
             trajectories_gt[:, :, :, 1] *= sy
 
-        elif dataset == "tapvid":
+        elif dataset in ["tapvid", "tapvid-chunked"]:
             rgbs = batch["rgbs"].to(device)
             query_points = batch["query_points"].to(device)
             trajectories_gt = batch["trajectories"].to(device)

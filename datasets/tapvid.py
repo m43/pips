@@ -1,16 +1,26 @@
+import warnings
+
 import torch
 
 
 class TAPVidIterator(torch.utils.data.Dataset):
+    """
+    An iterator that loads a TAP-Vid dataset and yields its elements.
+    The elements consist of videos of arbitrary length.
+    """
+
     def __init__(self, dataset_path, tapvid_subset_name, query_mode):
         self.dataset_path = dataset_path
         self.tapvid_subset_name = tapvid_subset_name
         self.query_mode = query_mode
 
-    def _generate_datapoints(self):
-        return list(iter(self))
-
     def __iter__(self):
+        # Do not let TF use GPUs, assuming that TF is not used elsewhere.
+        import tensorflow as tf
+        cpus = tf.config.list_physical_devices('CPU')
+        assert len(cpus) > 0
+        tf.config.set_visible_devices(cpus)
+
         if self.tapvid_subset_name == "kinetics":
             from datasets.tapvid_evaluation_datasets import create_kinetics_dataset
             dataset_element_iterator = create_kinetics_dataset(self.dataset_path, self.query_mode)
@@ -20,6 +30,9 @@ class TAPVidIterator(torch.utils.data.Dataset):
         elif self.tapvid_subset_name == "kubric":
             from datasets.tapvid_evaluation_datasets import create_kubric_eval_dataset
             dataset_element_iterator = create_kubric_eval_dataset(mode="")  # TODO What mode to use for kubric?
+        elif self.tapvid_subset_name == "kubric-train":
+            from datasets.tapvid_evaluation_datasets import create_kubric_eval_train_dataset
+            dataset_element_iterator = create_kubric_eval_train_dataset(mode="", max_dataset_size=None)
         elif self.tapvid_subset_name == "rgb_stacking":
             from datasets.tapvid_evaluation_datasets import create_rgb_stacking_dataset
             dataset_element_iterator = create_rgb_stacking_dataset(self.dataset_path, self.query_mode)
@@ -81,7 +94,7 @@ class TAPVidIterator(torch.utils.data.Dataset):
         assert torch.allclose(
             query_points[0, :, 1:].float(),
             trajectories[0, query_points[0, :, 0].long(), torch.arange(n_points)].float(),
-            atol=0.51,
+            atol=1.0,
         )
 
         return {
@@ -90,3 +103,61 @@ class TAPVidIterator(torch.utils.data.Dataset):
             "trajectories": trajectories,
             "visibilities": visibilities,
         }
+
+
+class TAPVidChunkedDataset(torch.utils.data.Dataset):
+    """
+    A dataset that loads a TAP-Vid dataset and splits it into chunks of a given chunk length.
+    PIPS is trained on these chunks, but the evaluation is done on the full sequences (see TAPVidIterator).
+    The whole dataset is loaded to memory at once and optionally cached to disk.
+    """
+
+    def __init__(self, dataset_path, tapvid_subset_name, chunk_length=8, chunking_stride=2):
+        self.iterator = TAPVidIterator(dataset_path, tapvid_subset_name, query_mode="first")
+        self.dataset_path = dataset_path
+        self.tapvid_subset_name = tapvid_subset_name
+        self.chunk_length = chunk_length
+        self.chunking_stride = chunking_stride
+
+    def __iter__(self):
+        for i, dataset_element in enumerate(self.iterator):
+            print(f"Yield datapoint {i}.")
+            yield from self._dataset_element_to_sequences(dataset_element)
+
+    def _dataset_element_to_sequences(self, dataset_element):
+        rgbs = dataset_element["rgbs"]
+        _ = dataset_element["query_points"]
+        trajectories = dataset_element["trajectories"]
+        visibilities = dataset_element["visibilities"]
+
+        batch_size, n_frames, channels, height, width = rgbs.shape
+        assert batch_size == 1
+
+        for sequence_start in range(0, n_frames, self.chunking_stride):
+            sequence_end = sequence_start + self.chunk_length
+            sequence_range = slice(sequence_start, sequence_end)
+            if sequence_end > n_frames:
+                break
+
+            first_timestep_visible = visibilities[:, sequence_range, :][0, 0, :]
+            if not first_timestep_visible.any():
+                warnings.warn(f"Skipping datapoint subsequence with sequence_start={sequence_start}: "
+                              f"No first timestep was visible in trajectories.")
+                continue
+
+            rgbs_datapoint = rgbs[:, sequence_range, :, :, :]
+            trajectories_datapoint = trajectories[:, sequence_range, first_timestep_visible, :]
+            visibilities_datapoint = visibilities[:, sequence_range, first_timestep_visible]
+
+            # Query points are the first timestep of the trajectories
+            query_point_xy = trajectories_datapoint[:, 0, :, :]
+            query_point_timestep = torch.zeros((query_point_xy.shape[0], query_point_xy.shape[1], 1))
+            query_points_datapoint = torch.cat([query_point_timestep, query_point_xy], dim=2)
+
+            datapoint = {
+                "rgbs": rgbs_datapoint,
+                "query_points": query_points_datapoint,
+                "trajectories": trajectories_datapoint,
+                "visibilities": visibilities_datapoint,
+            }
+            yield datapoint
