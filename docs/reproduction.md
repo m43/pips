@@ -72,14 +72,12 @@ select_images() {
   selected_images_output_path=$2
   images_from=$3
   images_to=$4
-  if [ -f "$my_video_path" ]; then
-    mkdir -p ${selected_images_output_path}
-    for idx in $(seq ${images_from} ${images_to}); do
-      filename=$(printf "%06d" ${idx}).jpg
-      echo ${output_images_path}/${filename} "-->" ${selected_images_output_path}/${filename}
-      \cp ${output_images_path}/${filename} ${selected_images_output_path}/${filename}
-    done
-  fi
+  mkdir -p ${selected_images_output_path}
+  for idx in $(seq ${images_from} ${images_to}); do
+    filename=$(printf "%06d" ${idx}).jpg
+    echo ${output_images_path}/${filename} "-->" ${selected_images_output_path}/${filename}
+    \cp ${output_images_path}/${filename} ${selected_images_output_path}/${filename}
+  done
 }
 select_images "./demo_images/ulaz_u_crnu_riku" "./demo_images/ulaz_u_crnu_riku__selected" 504 630
 ```

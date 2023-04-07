@@ -16,3 +16,4 @@ ffmpeg-python~=0.2.0
 tensorflow~=2.8.2
 tensorflow_graphics~=2021.12.3
 wandb~=0.14.0
+git+https://github.com/facebookresearch/segment-anything.git@aac76a1fb03cf90dc7cb2ad481d511642e51aeba
