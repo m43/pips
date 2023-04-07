@@ -10,15 +10,18 @@ python test_on_flt.py --modeltype dino --seed 123
 python test_on_flt.py --modeltype dino --seed 123 --N 64
 ```
 """
-
 import argparse
+import cv2
 import json
+import numpy as np
 import os
 import pandas as pd
 import pickle
 import time
 import torch
+from segment_anything import sam_model_registry, SamPredictor
 from tensorboardX import SummaryWriter
+from tqdm import tqdm
 
 import pips_utils.basic
 import pips_utils.improc
@@ -66,6 +69,7 @@ def get_parser():
     parser.add_argument('--log_dir', type=str, default='logs')
     parser.add_argument('--no_visualisations', action="store_true", default=False)
     parser.add_argument('--dont_save_raw_results', action="store_true", default=False)
+    parser.add_argument('--log_sam_output', action="store_true", default=False)
 
     # FlyingThings++ specific
     parser.add_argument('--flt_crop_size', type=int, nargs=2, default=(384, 512))
@@ -157,7 +161,8 @@ def evaluate(args):
 
             if not args.no_visualisations and sw_t is not None and sw_t.save_this:
                 log_batch_visualisations(sw_t, rgbs, query_points, packed_results, unpacked_results, summaries_batch,
-                                         summary_df, selected_metrics, selected_metrics_shorthand, args.modeltype)
+                                         summary_df, selected_metrics, selected_metrics_shorthand, args.modeltype,
+                                         args.log_sam_output)
 
             if not args.dont_save_raw_results:
                 results_list += unpacked_results
@@ -172,6 +177,7 @@ def evaluate(args):
         "model": args.modeltype,
         "dataset": f"{args.dataset_type}_{args.subset}",
         "query_mode": args.query_mode,
+        "checkpoint": args.checkpoint_path,
     }
     save_results(summaries, results_list, output_dir, args.mostly_visible_threshold, metadata)
 
@@ -187,6 +193,7 @@ def log_batch_visualisations(
         selected_metrics,
         key_shorthand,
         modeltype,
+        log_sam_output,
 ):
     trajectories_gt = packed_results["trajectories_gt"]
     trajectories_pred = packed_results["trajectories_pred"]
@@ -250,9 +257,8 @@ def log_batch_visualisations(
             text_annotation = f"{modeltype}"
             text_annotation += f"\n{point_category}_step-{summary_writer.global_step}_point-{point_idx}"
             text_annotation += f"\n" + " ".join(f"{x:.2f}" for x in query_points[0, point_idx, :].tolist())
-            for k, v in batch_summaries[point_idx].items():
-                if k in selected_metrics:
-                    text_annotation += summary_template_str.format(k=key_shorthand[k], v=v)
+            for k in selected_metrics:
+                text_annotation += summary_template_str.format(k=key_shorthand[k], v=batch_summaries[point_idx][k])
             plot_trajectories(
                 rgbs=rgbs,
                 trajectories_gt=trajectories_gt[:, :, [point_idx], :],
@@ -262,6 +268,7 @@ def log_batch_visualisations(
                 summary_writer=summary_writer,
                 prefix=prefix,
                 text_annotation=text_annotation,
+                add_sam_output=log_sam_output,
             )
     print("Logging done...")
 
@@ -275,10 +282,16 @@ def plot_trajectories(
         summary_writer,
         prefix="",
         text_annotation="your ad can be here",
+        add_sam_output=False,
 ):
     rgbs = pips_utils.improc.preprocess_color(rgbs)
     n_frames = rgbs.shape[1]
     text_annotation_per_frame = [f"{i}\n{text_annotation}" for i in range(n_frames)]
+
+    if add_sam_output:
+        log_key = f'{prefix}sam_masks'
+        log_rgbs_annotated_with_sam_masks_of_trajectory_points(log_key, rgbs, trajectories_gt, trajectories_pred,
+                                                               visibilities_gt, visibilities_pred)
 
     # Plot ground truth trajectories on a black RGB with only the trajectories shown
     gt_black = summary_writer.summ_traj2ds_on_rgb(
@@ -358,6 +371,95 @@ def plot_trajectories(
     )
 
 
+def log_rgbs_annotated_with_sam_masks_of_trajectory_points(log_key, rgbs, trajectories_gt, trajectories_pred,
+                                                           visibilities_gt, visibilities_pred, max_masks=100):
+    n_frames = rgbs.shape[1]
+    n_points = trajectories_gt.shape[2]
+    assert n_points == 1
+
+    rgbs = rgbs.permute(0, 1, 3, 4, 2)  # (B, T, C, H, W) -> (B, T, H, W, C)
+    rgbs = pips_utils.improc.back2color(rgbs)
+    rgbs = rgbs.cpu().numpy()
+
+    # TODO Hardcoded checkpoint
+    sam_checkpoint = "sam_checkpoints/sam_vit_h_4b8939.pth"
+    sam_model = "vit_h"
+    sam_predictor = create_sam_predictor(sam_checkpoint, sam_model)
+
+    masks_gt_list = []
+    masks_pred_list = []
+    for frame_idx in tqdm(range(n_frames)):
+        sam_predictor.set_image(rgbs[0, frame_idx])
+        point_labels = np.array([1])  # Assume that the points are foreground points (1), not background points (0)
+
+        # TODO Batchify over all interesting points in a video
+        point_coords_gt = trajectories_gt[0, frame_idx, 0, :].cpu().numpy().reshape((1, 2))
+        masks_gt, scores, logits = sam_predictor.predict(point_coords_gt, point_labels, multimask_output=False)
+        masks_gt = masks_gt[:max_masks, :, :]
+
+        point_coords_pred = trajectories_pred[0, frame_idx, 0, :].cpu().numpy().reshape((1, 2))
+        masks_pred, scores, logits = sam_predictor.predict(point_coords_pred, point_labels, multimask_output=False)
+
+        if visibilities_gt[0, frame_idx, 0] == 1:
+            masks_gt_list.append(masks_gt)
+        else:
+            masks_gt_list.append([])
+
+        if visibilities_pred[0, frame_idx, 0] == 1:
+            masks_pred_list.append(masks_pred)
+        else:
+            masks_pred_list.append([])
+
+    masked_rgbs = []
+    color_palette = [np.random.random((1, 1, 3)) for _ in range(max_masks)]
+    for frame_idx in range(n_frames):
+        rgb = rgbs[0, frame_idx]
+        masks_gt = masks_gt_list[frame_idx]
+        masks_pred = masks_pred_list[frame_idx]
+        point_gt = trajectories_gt[0, frame_idx, 0, :].cpu().numpy()
+        point_pred = trajectories_pred[0, frame_idx, 0, :].cpu().numpy()
+
+        masked_gt_rgb = overlay_masks_on_rgb(rgb / 255, masks_gt, color_palette)
+        masked_pred_rgb = overlay_masks_on_rgb(rgb / 255, masks_pred, color_palette)
+
+        masked_gt_rgb = cv2.circle(masked_gt_rgb, (int(point_gt[0]), int(point_gt[1])), 5, (255, 0, 0), -1)
+        masked_pred_rgb = cv2.circle(masked_pred_rgb, (int(point_pred[0]), int(point_pred[1])), 5, (255, 0, 0), -1)
+
+        masked_gt_rgb = (masked_gt_rgb * 255).astype(np.uint8)
+        masked_pred_rgb = (masked_pred_rgb * 255).astype(np.uint8)
+
+        masked_rgbs += [np.concatenate([rgb, masked_gt_rgb, masked_pred_rgb], axis=1)]
+
+    log_video_to_wandb(log_key, masked_rgbs)
+
+
+def create_sam_predictor(checkpoint, model) -> SamPredictor:
+    sam = sam_model_registry[model](checkpoint)
+    sam.to("cuda" if torch.cuda.is_available() else "cpu")
+    sam_predictor = SamPredictor(sam)
+    return sam_predictor
+
+
+def overlay_masks_on_rgb(rgb, masks, color_palette):
+    for mask, color in zip(masks, color_palette):
+        rgb = overlay_mask_on_rgb(rgb, mask, color)
+    return rgb
+
+
+def overlay_mask_on_rgb(rgb, mask, color):
+    overlay = np.ones_like(rgb)
+    overlay *= color
+    overlay = np.where(mask[..., None] > 0, overlay, rgb)
+    overlaid_rgb = cv2.addWeighted(rgb, 0.3, overlay, 0.7, 0)
+    return overlaid_rgb
+
+
+def log_video_to_wandb(log_key, frames):
+    frames_4d = np.stack(frames, axis=0)
+    frames_4d = frames_4d.transpose((0, 3, 1, 2))
+    wandb.log({log_key: wandb.Video(frames_4d, format="gif", fps=4)})
+
+
 def save_results(summaries, results_list, output_dir, mostly_visible_threshold, metadata):
     # Save summaries as a json file
     summaries_path = os.path.join(output_dir, "summaries.json")
@@ -372,6 +474,11 @@ def save_results(summaries, results_list, output_dir, mostly_visible_threshold, 
     print(f"\nResults summary dataframe saved to:\n{results_df_path}\n")
     for k, v in metadata.items():
         results_df[k] = v
+
+    # Save results summary dataframe as a wandb artifact
+    artifact = wandb.Artifact(name=f"{wandb.run.name}__results_df", type="df", metadata=metadata)
+    artifact.add_file(results_df_path, "results_df.csv")
+    wandb.log_artifact(artifact)
 
     # Save results list as a pickle file
     if len(results_list) > 0:
