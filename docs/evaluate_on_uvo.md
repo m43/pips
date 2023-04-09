@@ -149,3 +149,31 @@ beekeeper video can for example be found directly [here](https://www.youtube.com
 python -m demo_sam --input_video_folder data/UVOv1.0/uvo_videos_dense_frames/-18X6h92xpw
 ```
 
+## Evaluating on UVO
+
+Running the evaluation for the example validation predictions of the
+VideoDenseSet data:
+
+```bash
+python -m evaluate_uvo --annotations_json ./data/UVOv1.0/VideoDenseSet/UVO_video_val_dense.json --predictions_json ./data/UVOv1.0/ExampleSubmission/video_val_pred.json
+#  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.037
+#  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.069
+#  Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.034
+#  Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.020
+#  Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.073
+#  Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.117
+#  Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.020
+#  Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.050
+#  Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.053
+#  Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.028
+#  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.099
+#  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.152
+```
+
+## Visualising UVO Annotations
+
+TODO
+
+## RAFT/PIPS + Sam on UVO
+
+TODO
