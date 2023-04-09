@@ -1,14 +1,14 @@
 import argparse
-import cv2
 import glob
-import numpy as np
 import os
+
+import cv2
+import numpy as np
 import torch.cuda
-from datetime import datetime
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 from tqdm import tqdm
 
-import wandb
+from pips_utils.util import setup_wandb, log_video_to_wandb
 
 
 def main(args):
@@ -21,15 +21,6 @@ def main(args):
     log_video_to_wandb("input", input_video)
     log_video_to_wandb("sam_output", output_video)
     log_video_to_wandb("sam_output_and_input", output_and_input_video)
-
-
-def setup_wandb(entity, project, experiment):
-    timestamp = datetime.now().strftime('%Y.%m.%d_%H.%M.%S')
-    if experiment is None:
-        experiment = timestamp
-    else:
-        experiment += f"_{timestamp}"
-    wandb.init(entity=entity, project=project, name=experiment)
 
 
 def load_video(frames_path):
@@ -69,12 +60,6 @@ def add_masks_to_frames(frames, mask_records_list):
         frame = frame.astype(np.uint8)
         frames_with_masks += [frame]
     return frames_with_masks
-
-
-def log_video_to_wandb(log_key, frames):
-    frames_4d = np.stack(frames, axis=0)
-    frames_4d = frames_4d.transpose((0, 3, 1, 2))
-    wandb.log({log_key: wandb.Video(frames_4d, format="gif", fps=4)})
 
 
 def get_parser():

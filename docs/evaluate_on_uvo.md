@@ -172,7 +172,27 @@ python -m evaluate_uvo --annotations_json ./data/UVOv1.0/VideoDenseSet/UVO_video
 
 ## Visualising UVO Annotations
 
-TODO
+```bash
+# Visualize one video
+python -m pips_utils.visualize_uvo \
+  --video_idx 72 \
+  --video_frames_dir './data/UVOv1.0/uvo_videos_dense_frames/' \
+  --annotations_json './data/UVOv1.0/VideoDenseSet/UVO_video_val_dense.json' \
+  --predictions_json './data/UVOv1.0/ExampleSubmission/video_val_pred.json' \
+  --wandb_entity point-tracking \
+  --wandb_project visualize-uvo \
+  --local_gif_output_path logs/visualize_uvo \
+  --fps 30
+
+# Visualize all videos (by removing the `--video_idx` argument)
+python -m pips_utils.visualize_uvo \
+  --video_frames_dir './data/UVOv1.0/uvo_videos_dense_frames/' \
+  --annotations_json './data/UVOv1.0/VideoDenseSet/UVO_video_val_dense.json' \
+  --predictions_json './data/UVOv1.0/ExampleSubmission/video_val_pred.json' \
+  --wandb_entity point-tracking \
+  --wandb_project visualize-uvo \
+  --fps 30
+```
 
 ## RAFT/PIPS + Sam on UVO
 

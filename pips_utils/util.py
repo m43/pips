@@ -6,7 +6,7 @@ from typing import List, Any
 
 import numpy as np
 import torch
-
+import wandb
 from torch.optim.lr_scheduler import LambdaLR
 
 
@@ -213,3 +213,18 @@ def seed_all(seed):
 
 def worker_seed_init_fn(worker_id):
     np.random.seed(np.random.get_state()[1][0] + worker_id)
+
+
+def setup_wandb(entity, project, experiment):
+    timestamp = datetime.now().strftime('%Y.%m.%d_%H.%M.%S')
+    if experiment is None:
+        experiment = timestamp
+    else:
+        experiment += f"_{timestamp}"
+    wandb.init(entity=entity, project=project, name=experiment)
+
+
+def log_video_to_wandb(log_key, frames, step=None, fmt="gif", fps=4):
+    frames_4d = np.stack(frames, axis=0)
+    frames_4d = frames_4d.transpose((0, 3, 1, 2))
+    wandb.log({log_key: wandb.Video(frames_4d, format=fmt, fps=fps)}, step=step)
