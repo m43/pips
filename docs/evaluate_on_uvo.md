@@ -1,7 +1,7 @@
 # Evaluation on the Object Tracking Task of the UVO Dataset	
 
 This markdown file documents how to prepare the UVO dataset and evaluate
-PIPS+Sam and RAFT+Sam on it.
+json prediction results.
 
 ## Prepare UVO
 
@@ -194,6 +194,8 @@ python -m pips_utils.visualize_uvo \
   --fps 30
 ```
 
-## RAFT/PIPS + Sam on UVO
+## Center-Tracking Baseline Based on RAFT+Sam and PIPS+Sam
 
-TODO
+This part has been moved to the Mask2Former codebase, since it will be
+implemented there as to use Mask2Former and its Detectron2 setup to
+reuse code.
