@@ -1,8 +1,12 @@
 import math
 import pathlib
+import random
 from datetime import datetime
 from typing import List, Any
 
+import numpy as np
+import torch
+import wandb
 from torch.optim.lr_scheduler import LambdaLR
 
 
@@ -198,3 +202,29 @@ def zip_strict(*lists):
     lengths = [len(_list) for _list in lists]
     assert all([length == lengths[0] for length in lengths]), "All input lists must have the same length."
     return zip(*lists)
+
+
+def seed_all(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+def worker_seed_init_fn(worker_id):
+    np.random.seed(np.random.get_state()[1][0] + worker_id)
+
+
+def setup_wandb(entity, project, experiment):
+    timestamp = datetime.now().strftime('%Y.%m.%d_%H.%M.%S')
+    if experiment is None:
+        experiment = timestamp
+    else:
+        experiment += f"_{timestamp}"
+    wandb.init(entity=entity, project=project, name=experiment)
+
+
+def log_video_to_wandb(log_key, frames, step=None, fmt="gif", fps=4):
+    frames_4d = np.stack(frames, axis=0)
+    frames_4d = frames_4d.transpose((0, 3, 1, 2))
+    wandb.log({log_key: wandb.Video(frames_4d, format=fmt, fps=fps)}, step=step)

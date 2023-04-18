@@ -1,6 +1,8 @@
+# TODO Should be moved to evaluate.py
+
 import time
 import numpy as np
-import saverloader
+from pips_utils import saverloader
 from nets.raftnet import Raftnet
 from nets.pips import Pips
 import random
@@ -8,7 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 import torch.nn.functional as F
-from datasets.badjadataset import BadjaDataset
+from datasets.badja import BadjaDataset
 import pips_utils.basic
 import pips_utils.improc
 import pips_utils.test

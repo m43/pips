@@ -149,7 +149,7 @@ def helper(rgb_path, mask_path, flow_path, out_dir, folder_name, lr, start_ind, 
         trajs = None
         sys.stdout.write('%d ' % N)
     else:
-        sys.stdout.write('.')
+        sys.stdout.write('..')
         
     if not os.path.exists(cur_out_dir):
         os.makedirs(cur_out_dir)

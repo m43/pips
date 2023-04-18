@@ -1,11 +1,13 @@
-import torch
-import numpy as np
-import pips_utils.basic
-from sklearn.decomposition import PCA
-from matplotlib import cm
-import matplotlib.pyplot as plt
 import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 import torch.nn.functional as F
+from matplotlib import cm
+from sklearn.decomposition import PCA
+
+import pips_utils.basic
+
 EPS = 1e-6
 
 def preprocess_color_tf(x):
@@ -130,12 +132,12 @@ def gif_and_tile(ims, just_gif=False):
 
 def back2color(i, blacken_zeros=False):
     if blacken_zeros:
-        const = torch.tensor([-0.5])
-        i = torch.where(i==0.0, const.cuda() if i.is_cuda else const, i)
+        const = torch.tensor([-0.5]).to(i.device)
+        i = torch.where(i==0.0, const, i)
         return back2color(i)
     else:
         return ((i+0.5)*255).type(torch.ByteTensor)
-    
+
 def xy2heatmap(xy, sigma, grid_xs, grid_ys, norm=False):
     # xy is B x N x 2, containing float x and y coordinates of N things
     # grid_xs and grid_ys are B x N x Y x X
@@ -209,7 +211,7 @@ def seq2color(im, norm=True, colormap='coolwarm'):
     # coeffs[:int(S/2)] -= 2.0
     # coeffs[int(S/2)+1:] += 2.0
     
-    coeffs = torch.from_numpy(coeffs).float().cuda()
+    coeffs = torch.from_numpy(coeffs).float().to(im.device)
     coeffs = coeffs.reshape(1, S, 1, 1).repeat(B, 1, H, W)
     # scale each channel by the right coeff
     im = im * coeffs
@@ -242,7 +244,7 @@ def seq2color(im, norm=True, colormap='coolwarm'):
             assert(False) # invalid colormap
         # move channels into dim 0
         im_ = np.transpose(im_, [2, 0, 1])
-        im_ = torch.from_numpy(im_).float().cuda()
+        im_ = torch.from_numpy(im_).float().to(im.device)
         out.append(im_)
     out = torch.stack(out, dim=0)
     
@@ -291,24 +293,30 @@ def oned2inferno(d, norm=True):
     # rgb = tf.expand_dims(rgb, axis=0)
     return rgb
 
-def draw_frame_id_on_vis(vis, frame_id, scale=0.5, left=5, top=20):
 
+def draw_frame_id_on_vis(vis, frame_id, font_scale=0.5, left=5, top=20, font_thickness=1):
     rgb = vis.detach().cpu().numpy()[0]
-    rgb = np.transpose(rgb, [1, 2, 0]) # put channels last
-    rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR) 
-    color = (255, 255, 255)
+    rgb = np.transpose(rgb, [1, 2, 0])  # put channels last
+    rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    font_color = (255, 255, 255)
     # print('putting frame id', frame_id)
 
-    frame_str = pips_utils.basic.strnum(frame_id)
-    
-    cv2.putText(
-        rgb,
-        frame_str,
-        (left, top), # from left, from top
-        cv2.FONT_HERSHEY_SIMPLEX,
-        scale, # font scale (float)
-        color, 
-        1) # font thickness (int)
+    frame_str = pips_utils.basic.strnum(frame_id) if type(frame_id) != str else frame_id
+
+    # Write each line of text in a new row
+    (_, label_height), _ = cv2.getTextSize(frame_str, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+    for i, line in enumerate(frame_str.split('\n')):
+        top_i = top + i * label_height
+        cv2.putText(
+            rgb,
+            line,
+            (left, top_i),  # from left, from top
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            font_color,
+            font_thickness,
+        )
+
     rgb = cv2.cvtColor(rgb.astype(np.uint8), cv2.COLOR_BGR2RGB)
     vis = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0)
     return vis

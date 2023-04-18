@@ -1,7 +1,7 @@
+# TODO Should be moved to evaluate.py
+
 """
 Evaluate on Head Tracking in CroHD. Supports evaluating PIPs, RAFT, and DINO.
-
-PIPs vis: 4.57, PIPs occ: 7.71 TODO: numbers not verified
 
 Examples of usage:
 ```bash
@@ -20,6 +20,7 @@ import time
 
 import numpy as np
 import torch
+from datasets.crohd import CrohdDataset, prep_sample
 from fire import Fire
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
@@ -27,13 +28,12 @@ from torch.utils.data import DataLoader
 import pips_utils.basic
 import pips_utils.improc
 import pips_utils.test
-import saverloader
-from datasets.crohddataset import CrohdDataset, prep_sample
+from pips_utils import saverloader
 from nets.pips import Pips
 from nets.raftnet import Raftnet
 from pips_utils.figures import compute_summary_df, figure1, figure2
 from pips_utils.util import ensure_dir
-from test_on_flt import run_for_sample
+from test_on_flt import evaluate_batch
 
 device = 'cuda'
 random.seed(125)
@@ -141,7 +141,7 @@ def main(
         iter_start_time = time.time()
 
         with torch.no_grad():
-            packed_results = run_for_sample(modeltype, model, sample, sw_t, dataset="crohd")
+            packed_results = evaluate_batch(modeltype, model, sample, sw_t, dataset, device)
             for b in range(packed_results["trajectory_gt"].shape[0]):
                 for n in range(packed_results["trajectory_gt"].shape[2]):
                     results_list += [{
