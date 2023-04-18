@@ -1,4 +1,4 @@
-TODO: Outdated, see `docs`.
+TODO: Outdated, see `docs` for work-in-progess code usage instructions
 
 # Particle Video Revisited: Tracking Through Occlusions Using Point Trajectories
 
