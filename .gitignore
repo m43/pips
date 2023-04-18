@@ -1,3 +1,11 @@
+sam_checkpoints
+wandb
+data
+kubric/
+logs
+demo_images/frano.avi
+demo_images/slow.flv
+demo_images/ulaz_u_crnu_riku.mp4
 .idea
 logs_demo
 logs_chain_demo

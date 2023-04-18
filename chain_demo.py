@@ -2,11 +2,9 @@ import time
 
 import argparse
 import numpy as np
-import io
 import os
 from PIL import Image
-import cv2
-import saverloader
+from pips_utils import saverloader
 import imageio.v2 as imageio
 from nets.pips import Pips
 import pips_utils.improc
@@ -14,7 +12,6 @@ import random
 import glob
 
 from pips_utils.util import ensure_dir
-from pips_utils.basic import print_, print_stats
 import torch
 from tensorboardX import SummaryWriter
 import torch.nn.functional as F

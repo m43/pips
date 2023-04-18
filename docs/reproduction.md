@@ -1,14 +1,32 @@
 # Reproduce PIPs Results
 
+TODO: Revise documentation after refactoring and rewriting the evaluation setup.
+
 ## Environment Setup
 
-I will use conda:
+I will use conda to manage the environment.
+
+You might need to first install OpenEXR if you do not have it.
+It is needed to build the `tensorflow_graphics` package,
+used when generating the TAP-Vid kubric dataset.
+
+For using visualizations tools from the `TAP-Vid` dataset,
+you also need to install ffmpeg,
+for example using `sudo apt install ffmpeg`.
 
 ```bash
 conda create --name pips python=3.10 -y
-source activate pips
+conda activate pips
 conda install pytorch=1.12.0 torchvision=0.13.0 cudatoolkit=11.3 -c pytorch
+
+pip install --upgrade pip
+pip install packaging
 pip install -r requirements.txt
+
+git clone https://github.com/google-research/kubric.git
+cd kubric
+git checkout 5173c46101ab509d6d05964c0a1fc9fc2f40a947
+cd ..
 ```
 
 ## Run Provided Demo
@@ -23,10 +41,10 @@ python chain_demo.py
 
 ## Run on Your Own Video
 
-Prepare a video of your own. For example, I will process the video I
-have downloaded
-from [this youtube video](https://www.youtube.com/watch?v=gqHy_trMnRk&ab_channel=cro3x3)
-and put it into `demo_images/ulaz_u_crnu_riku.mp4`:
+Prepare a video of your own. For example, I will process a few videos
+such as [this youtube
+video](https://www.youtube.com/watch?v=gqHy_trMnRk&ab_channel=cro3x3)
+that I have downloaded and put into `demo_images/ulaz_u_crnu_riku.mp4`:
 
 ```bash
 video_to_images() {
@@ -46,7 +64,7 @@ video_to_images "./demo_images/frano.avi" "./demo_images/frano" 24
 video_to_images "./demo_images/slow.flv" "./demo_images/slow" 24
 ```
 
-I will select a smaller number of images to run with the chain_demo:
+I will select a subset of images to run with the chain_demo:
 
 ```bash
 select_images() {
@@ -54,19 +72,17 @@ select_images() {
   selected_images_output_path=$2
   images_from=$3
   images_to=$4
-  if [ -f "$my_video_path" ]; then
-    mkdir -p ${selected_images_output_path}
-    for idx in $(seq ${images_from} ${images_to}); do
-      filename=$(printf "%06d" ${idx}).jpg
-      echo ${output_images_path}/${filename} "-->" ${selected_images_output_path}/${filename}
-      \cp ${output_images_path}/${filename} ${selected_images_output_path}/${filename}
-    done
-  fi
+  mkdir -p ${selected_images_output_path}
+  for idx in $(seq ${images_from} ${images_to}); do
+    filename=$(printf "%06d" ${idx}).jpg
+    echo ${output_images_path}/${filename} "-->" ${selected_images_output_path}/${filename}
+    \cp ${output_images_path}/${filename} ${selected_images_output_path}/${filename}
+  done
 }
 select_images "./demo_images/ulaz_u_crnu_riku" "./demo_images/ulaz_u_crnu_riku__selected" 504 630
 ```
 
-Run on your own video:
+Finally, run on your own video:
 
 ```bash
 python demo.py \
@@ -92,13 +108,13 @@ python chain_demo.py \
 
 ## Prepare Data
 
-I will download the necessary data into `./data`, that I soft linked
-to a data folder
-using `ln -s /scratch/izar/rajic/eth-master-thesis/00-data data`.
+I will download the necessary data into `./data`, which I soft linked to
+a data folder using `ln -s /scratch/izar/rajic/eth-master-thesis/00-data
+data`.
 
 ### 0. Set up a torrent client
 
-To download the [FlyingThings++
+To download the [FlyingThings
 dataset](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html),
 we need to have a torrent client. I will install `qBittorrent-nox`, a
 version of qBittorrent (Qt5 application) that does not require X and can
@@ -155,11 +171,11 @@ cd -
 ```
 
 Additionally, download the `RGB images (cleanpass) (WebP)` portion of
-the [FlyingThings++
+the [FlyingThings
 dataset](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html),
-using a torrent client. In case you will produce the trajectory and
-occlusion data yourself, then you also need to download `Optical flow`
-and `Object segmentation`.
+using a torrent client. Also, download the `Object segmentation` data
+using wget. In case you will produce the trajectory and occlusion data
+yourself, then you also need to download the `Optical flow` data.
 
 The structure should look like this:
 
@@ -179,6 +195,13 @@ tree -L 3 data
 #     └── trajs_ad
 #         ├── TEST
 #         └── TRAIN
+
+du -sch data/flyingthings # To get a feeling about the size
+# 7.5G    data/flyingthings/frames_cleanpass_webp
+# 104G    data/flyingthings/object_index
+# 6.8G    data/flyingthings/occluders_al
+# 78G     data/flyingthings/trajs_ad
+# 196G    total
 ```
 
 _Nota bene_: the suffixes "ad" and "al" are dataset (pre)processing
@@ -319,21 +342,69 @@ tree -L 3 data
 #     └── HT21Labels
 #         ├── test
 #         └── train
+
+du -sch data/flyingthings data/head_tracking data/DAVIS data/badja_data
+# 196G    data/flyingthings
+# 4.5G    data/head_tracking
+# 7.1G    data/DAVIS
+# 554M    data/badja_data
 ```
 
-To make sure the data is downloaded and located correctly, you can run
+To make sure the data is downloaded and placed correctly, you can run
 the following evaluation commands, one for each dataset. The evaluation
-script will run use the checkpoint saved in `reference_model` by default
-(e.g., the `reference_model/model-000200000.pth`). Using the provided
-checkpoint should give numbers close to those provided in the
-`README.md`. However, the numbers should not match those in the paper,
-since the checkpoint was improved since the paper publication (by using
-a harder version of FlyingThings++ to train on).
+script will use the checkpoint saved in `reference_model` by default
+(e.g., the `reference_model/model-000200000.pth`).
 
 ```bash
 cd path/to/pips/project
 
-python test_on_flt.py
+python test_on_flt.py --modeltype pips --exp_name flt --dataset_type flyingthings++ --dataset_location data/flyingthings --subset all --N 16
+python test_on_crohd.py
+python test_on_davis.py
+python test_on_badja.py
+```
+
+## Train
+
+I will train on 2 GPUs, a batch size of 2 instead of 4, and 128
+points/trajectories instead of 768:
+
+```bash
+python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128
+```
+
+If training crashes, you can continue for example as:
+
+```bash
+python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1] --B=2 --N=128 \
+  --init_dir "logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_15:22:55" \
+  --load_optimizer True \
+  --load_step True
+```
+
+## Reproduce Paper Numbers
+
+The numbers reported in the paper are not all exactly reproducible as
+the evaluation was not seeded properly, but the resulting numbers are
+mostly close. However, All numbers reported in this document should be
+exactly reproducible.
+
+### Evaluating the Provided Checkpoint
+
+Using the provided checkpoint should give numbers close to those
+provided in the `README.md`. However, the numbers should not match those
+in the paper, since the checkpoint was improved since the paper's
+publication (by using a harder version of FlyingThings++ to train on).
+To reproduce the numbers run the following:
+
+```bash
+python test_on_flt.py \
+  --modeltype pips \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
 # model_name 1_8_16_pips_flt_16:05:08
 # loading FlyingThingsDataset...found 2542 samples in data/flyingthings (d
 # set=TEST, subset=all, version=ad)
@@ -342,19 +413,12 @@ python test_on_flt.py
 # ...found checkpoint reference_model/model-000200000.pth
 # setting max_iters 2542
 # ...
-# 1_8_16_pips_flt_16:05:08; step 002539/2542; rtime 0.00; itime 0.11, ate_vis = 6.08, ate_occ = 19.36
-# 1_8_16_pips_flt_16:05:08; step 002540/2542; rtime 0.00; itime 0.11, ate_vis = 6.08, ate_occ = 19.36
-# 1_8_16_pips_flt_16:05:08; step 002541/2542; rtime 0.00; itime 0.11, ate_vis = 6.07, ate_occ = 19.36
-# 1_8_16_pips_flt_16:05:08; step 002542/2542; rtime 0.00; itime 0.11, ate_vis = 6.08, ate_occ = 19.35
+# 1_8_16_pips_flt_13:59:12 step=002542/2542 readtime=0.00 itertime=0.11 ate_all=8.68 ate_vis=6.04 ate_occ=19.43
+# logs_test_on_flt/1_8_16_pips_flt_13:59:12/results_df.csv
 
 python test_on_crohd.py
-# ...
-# 1_8_16_pips_occ_crohd_13:59:30; step 000234/237; rtime 0.07; itime 0.27; ate = 3.85; ate_pooled = 7.59
-# 1_8_16_pips_occ_crohd_13:59:30; step 000235/237; rtime 0.05; itime 0.26; ate = 39.14; ate_pooled = 7.73
-# 1_8_16_pips_occ_crohd_13:59:30; step 000236/237; rtime 0.12; itime 0.27; ate = 4.59; ate_pooled = 7.71
-# 1_8_16_pips_occ_crohd_13:59:30; step 000237/237; rtime 0.07; itime 0.27; ate = 7.64; ate_pooled = 7.71
-
-python test_on_davis.py
+# 1_8_128_pips_vis_crohd_20:27:19 step=000237/237 readtime=0.06 itertime=0.38 ate_all=4.86 ate_vis=4.82 ate_occ=11.79
+# logs_test_on_crohd/1_8_128_pips_vis_crohd_20:27:19/results_df.csv
 
 python test_on_badja.py
 # model_name 1_8_pips_badja_15:09:30
@@ -391,53 +455,180 @@ python test_on_badja.py
 # results ['76.4', '91.6', '87.2', '31.0', '46.0', '62.3', '61.3', 'avg 65.1']
 ```
 
-## Train
-
-To reproduce the result in the paper, you should train with 4 gpus,
-with horizontal and vertical flips, with a command like this:
-
-```bash
-#python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1]
-python train.py --horz_flip=True --vert_flip=True --device_ids=[0,1,2,3]
-```
-
-## Reproduce Paper Numbers
-
-### Evaluating the Provided Checkpoint
-
-To simply reproduce the numbers for the checkpoint provided by the
-authors, run the following:
-
-```bash
-python test_on_flt.py
-python test_on_crohd.py
-python test_on_davis.py
-python test_on_badja.py
-```
-
 ### Evaluating the Trained Model
 
 To evaluate the model we have trained, find the location of the relevant
-checkpoint and run:
+checkpoint and run the commands below. Note that I trained for only
+61000 steps instead of 200000, so the results are somewhat subpar to the
+original model, but still quite close.
 
 ```bash
-`TODO`
+python test_on_flt.py \
+  --modeltype pips \
+  --init_dir logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_18:11:24 \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
+# 1_8_16_pips_flt_14:36:26 step=002542/2542 readtime=0.00 itertime=0.11 ate_all=13.72 ate_vis=9.85 ate_occ=30.20
+# logs_test_on_flt/1_8_16_pips_flt_14:36:26/results_df.csv
+
+python test_on_crohd.py --init_dir logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_18:11:24
+# 1_8_128_pips_vis_crohd_14:13:01 step=000237/237 readtime=0.12 itertime=0.42 ate_all=5.33 ate_vis=5.30 ate_occ=11.79
+# logs_test_on_crohd/1_8_128_pips_vis_crohd_14:13:01/results_df.csv
+
+python test_on_badja.py --init_dir logs/my_pips/checkpoints/8hv_8_128_I4_5e-4_A_debug_18:11:24
+# results ['73.2', '80.1', '81.6', '27.6', '43.1', '53.0', '57.1', 'avg 59.4']
 ```
 
 ### Evaluating Baselines
 
-TODO: RAFT
+Evaluating the baselines will exactly reproduce the numbers reported in
+the paper for BADJA (table 4), but not for CroHD or FlyingThings++. The
+numbers reported in this document should be reproduced.
 
-TODO: DINO
+Evaluate DINO, the checkpoint will be downloaded automatically:
+
+```bash
+python test_on_flt.py \
+  --modeltype dino \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
+# 1_8_16_dino_flt_13:59:46 step=002542/2542 readtime=0.00 itertime=17.10 ate_all=48.68 ate_vis=43.00 ate_occ=76.05
+# logs_test_on_flt/1_8_16_dino_flt_13:59:46/results_df.csv
+
+python test_on_crohd.py --modeltype='dino'
+# 1_8_128_dino_vis_crohd_14:00:12 step=000237/237 readtime=0.05 itertime=24.52 ate_all=22.80 ate_vis=22.76 ate_occ=29.68
+# logs_test_on_crohd/1_8_128_dino_vis_crohd_14:00:12/results_df.csv
+
+python test_on_badja.py --modeltype='dino'
+# 1_8_dino_badja_23:05:16; step 000001/7; rtime 7.42; itime 8.50; bear; pck 75.0
+# 1_8_dino_badja_23:05:16; step 000002/7; rtime 2.34; itime 7.02; camel; pck 59.2
+# 1_8_dino_badja_23:05:16; step 000003/7; rtime 6.04; itime 8.07; cows; pck 70.6
+# 1_8_dino_badja_23:05:16; step 000004/7; rtime 0.11; itime 1.58; dog-agility; pck 10.3
+# 1_8_dino_badja_23:05:16; step 000005/7; rtime 0.03; itime 4.28; dog; pck 47.1
+# 1_8_dino_badja_23:05:16; step 000006/7; rtime 1.01; itime 4.07; horsejump-high; pck 35.1
+# 1_8_dino_badja_23:05:16; step 000007/7; rtime 3.30; itime 4.72; horsejump-low; pck 56.0
+# results ['75.0', '59.2', '70.6', '10.3', '47.1', '35.1', '56.0', 'avg 50.5']
+```
+
+Evaluate RAFT, but first download a checkpoint from their
+[GitHub](https://github.com/princeton-vl/RAFT):
+
+```bash
+wget https://www.dropbox.com/s/4j4z58wuv8o0mfz/models.zip
+unzip models.zip
+rm models.zip
+mv models raft_ckpts
+lss raft_ckpts
+# total 85M
+# -rw-r--r--   21M   Jul 25 2020   raft-chairs.pth
+# -rw-r--r--   21M   Jul 25 2020   raft-kitti.pth
+# -rw-r--r--   21M   Jul 25 2020   raft-sintel.pth
+# -rw-rw-r--  3.9M   Aug 24 2020   raft-small.pth
+# -rw-r--r--   21M   Jul 25 2020   raft-things.pth
+
+python test_on_flt.py \
+  --modeltype raft \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
+# 1_8_16_raft_flt_14:03:32 step=002542/2542 readtime=0.00 itertime=1.15 ate_all=21.53 ate_vis=16.72 ate_occ=43.42
+# logs_test_on_flt/1_8_16_raft_flt_14:03:32/results_df.csv
+
+python test_on_crohd.py --modeltype='raft'
+# 1_8_128_raft_vis_crohd_20:27:19 step=000237/237 readtime=0.05 itertime=1.60 ate_all=8.23 ate_vis=8.20 ate_occ=15.24
+# logs_test_on_crohd/1_8_128_raft_vis_crohd_20:27:19/results_df.csv
+
+python test_on_badja.py --modeltype='raft'
+# 1_8_raft_badja_23:29:59; step 000001/7; rtime 5.83; itime 16.02; bear; pck 64.6
+# 1_8_raft_badja_23:29:59; step 000002/7; rtime 0.09; itime 12.92; camel; pck 65.6
+# 1_8_raft_badja_23:29:59; step 000003/7; rtime 0.09; itime 17.82; cows; pck 69.5
+# 1_8_raft_badja_23:29:59; step 000004/7; rtime 0.11; itime 3.01; dog-agility; pck 13.8
+# 1_8_raft_badja_23:29:59; step 000005/7; rtime 0.02; itime 7.85; dog; pck 39.1
+# 1_8_raft_badja_23:29:59; step 000006/7; rtime 0.06; itime 10.19; horsejump-high; pck 37.1
+# 1_8_raft_badja_23:29:59; step 000007/7; rtime 0.07; itime 10.16; horsejump-low; pck 29.3
+# results ['64.6', '65.6', '69.5', '13.8', '39.1', '37.1', '29.3', 'avg 45.6']
+```
 
 ## Plot Precision Plots
 
-`TODO`
+I will create more verbose summaries and figures to better inspect the
+performance the different methods and better compare them.
 
-## Plot Dataset Annotations
+### FlyingThings++
 
-`TODO`
+For this, I first create and save evaluation summaries to disk:
 
-## Identifying Failure Cases
+```bash
+python test_on_flt.py \
+  --modeltype pips \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
+# logs_test_on_flt/1_8_16_pips_flt_10:48:30/results_df.csv
 
-`TODO`
+python test_on_flt.py \
+  --modeltype raft \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
+# logs_test_on_flt/1_8_16_raft_flt_02:04:56/results_df.csv
+
+python test_on_flt.py \
+  --modeltype dino \
+  --exp_name flt \
+  --dataset_type flyingthings++ \
+  --dataset_location data/flyingthings \
+  --subset all \
+  --N 16
+# logs_test_on_flt/1_8_16_dino_flt_02:03:12/results_df.csv
+```
+
+With the `csv` results dataframes ready, I will now run the creation of
+the figures and other summaries:
+
+```bash
+python -m pips_utils.figures \
+  --mostly_visible_threshold 4 \
+  --results_path_list \
+  logs_test_on_flt/1_8_16_pips_flt_13:59:12/results_df.csv \
+  logs_test_on_flt/1_8_16_raft_flt_14:03:32/results_df.csv \
+  logs_test_on_flt/1_8_16_dino_flt_13:59:46/results_df.csv \
+  --results_name_list \
+  PIPs \
+  RAFT \
+  DINO
+```
+
+### CroHD
+
+For CroHD, we evaluate on the same metrics and create the same plots as
+for FlytingThings++:
+
+```bash
+python test_on_crohd.py --modeltype='pips'
+python test_on_crohd.py --modeltype='raft'
+python test_on_crohd.py --modeltype='dino'
+
+python -m pips_utils.figures \
+  --mostly_visible_threshold 8 \
+  --results_path_list \
+  logs_test_on_crohd/1_8_128_pips_vis_crohd_20:27:19/results_df.csv \
+  logs_test_on_crohd/1_8_128_raft_vis_crohd_20:27:19/results_df.csv \
+  logs_test_on_crohd/1_8_128_dino_vis_crohd_14:00:12/results_df.csv \
+  --results_name_list \
+  PIPs \
+  RAFT \
+  DINO
+```
