@@ -1,5 +1,5 @@
 import torch
-import utils.basic
+import pips_utils.basic
 import torch.nn.functional as F
 
 def bilinear_sample2d(im, x, y, return_inbounds=False):

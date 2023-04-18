@@ -1,11 +1,13 @@
-import torch
-import numpy as np
-import utils.basic
-from sklearn.decomposition import PCA
-from matplotlib import cm
-import matplotlib.pyplot as plt
 import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 import torch.nn.functional as F
+from matplotlib import cm
+from sklearn.decomposition import PCA
+
+import pips_utils.basic
+
 EPS = 1e-6
 
 def preprocess_color_tf(x):
@@ -98,7 +100,7 @@ def reduce_emb(emb, valid=None, inbound=None, together=False):
     else:
         reduced_emb = pca_embed(emb, keep, valid) #not im
 
-    reduced_emb = utils.basic.normalize(reduced_emb) - 0.5
+    reduced_emb = pips_utils.basic.normalize(reduced_emb) - 0.5
     if inbound is not None:
         emb_inbound = emb*inbound
     else:
@@ -130,12 +132,12 @@ def gif_and_tile(ims, just_gif=False):
 
 def back2color(i, blacken_zeros=False):
     if blacken_zeros:
-        const = torch.tensor([-0.5])
-        i = torch.where(i==0.0, const.cuda() if i.is_cuda else const, i)
+        const = torch.tensor([-0.5]).to(i.device)
+        i = torch.where(i==0.0, const, i)
         return back2color(i)
     else:
         return ((i+0.5)*255).type(torch.ByteTensor)
-    
+
 def xy2heatmap(xy, sigma, grid_xs, grid_ys, norm=False):
     # xy is B x N x 2, containing float x and y coordinates of N things
     # grid_xs and grid_ys are B x N x Y x X
@@ -167,7 +169,7 @@ def xy2heatmap(xy, sigma, grid_xs, grid_ys, norm=False):
     if norm:
         # normalize so each gaussian peaks at 1
         gauss_ = gauss.reshape(B*N, Y, X)
-        gauss_ = utils.basic.normalize(gauss_)
+        gauss_ = pips_utils.basic.normalize(gauss_)
         gauss = gauss_.reshape(B, N, Y, X)
 
     return gauss
@@ -180,7 +182,7 @@ def xy2heatmaps(xy, Y, X, sigma=30.0):
 
     device = xy.device
     
-    grid_y, grid_x = utils.basic.meshgrid2d(B, Y, X, device=device)
+    grid_y, grid_x = pips_utils.basic.meshgrid2d(B, Y, X, device=device)
     # grid_x and grid_y are B x Y x X
     grid_xs = grid_x.unsqueeze(1).repeat(1, N, 1, 1)
     grid_ys = grid_y.unsqueeze(1).repeat(1, N, 1, 1)
@@ -209,7 +211,7 @@ def seq2color(im, norm=True, colormap='coolwarm'):
     # coeffs[:int(S/2)] -= 2.0
     # coeffs[int(S/2)+1:] += 2.0
     
-    coeffs = torch.from_numpy(coeffs).float().cuda()
+    coeffs = torch.from_numpy(coeffs).float().to(im.device)
     coeffs = coeffs.reshape(1, S, 1, 1).repeat(B, 1, H, W)
     # scale each channel by the right coeff
     im = im * coeffs
@@ -242,7 +244,7 @@ def seq2color(im, norm=True, colormap='coolwarm'):
             assert(False) # invalid colormap
         # move channels into dim 0
         im_ = np.transpose(im_, [2, 0, 1])
-        im_ = torch.from_numpy(im_).float().cuda()
+        im_ = torch.from_numpy(im_).float().to(im.device)
         out.append(im_)
     out = torch.stack(out, dim=0)
     
@@ -278,7 +280,7 @@ def oned2inferno(d, norm=True):
     assert(C==1)
 
     if norm:
-        d = utils.basic.normalize(d)
+        d = pips_utils.basic.normalize(d)
         
     rgb = torch.zeros(B, 3, H, W)
     for b in list(range(B)):
@@ -291,29 +293,35 @@ def oned2inferno(d, norm=True):
     # rgb = tf.expand_dims(rgb, axis=0)
     return rgb
 
-def draw_frame_id_on_vis(vis, frame_id, scale=0.5, left=5, top=20):
 
+def draw_frame_id_on_vis(vis, frame_id, font_scale=0.5, left=5, top=20, font_thickness=1):
     rgb = vis.detach().cpu().numpy()[0]
-    rgb = np.transpose(rgb, [1, 2, 0]) # put channels last
-    rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR) 
-    color = (255, 255, 255)
+    rgb = np.transpose(rgb, [1, 2, 0])  # put channels last
+    rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    font_color = (255, 255, 255)
     # print('putting frame id', frame_id)
 
-    frame_str = utils.basic.strnum(frame_id)
-    
-    cv2.putText(
-        rgb,
-        frame_str,
-        (left, top), # from left, from top
-        cv2.FONT_HERSHEY_SIMPLEX,
-        scale, # font scale (float)
-        color, 
-        1) # font thickness (int)
+    frame_str = pips_utils.basic.strnum(frame_id) if type(frame_id) != str else frame_id
+
+    # Write each line of text in a new row
+    (_, label_height), _ = cv2.getTextSize(frame_str, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+    for i, line in enumerate(frame_str.split('\n')):
+        top_i = top + i * label_height
+        cv2.putText(
+            rgb,
+            line,
+            (left, top_i),  # from left, from top
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            font_color,
+            font_thickness,
+        )
+
     rgb = cv2.cvtColor(rgb.astype(np.uint8), cv2.COLOR_BGR2RGB)
     vis = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0)
     return vis
 
-COLORMAP_FILE = "./utils/bremm.png"
+COLORMAP_FILE = "./pips_utils/bremm.png"
 class ColorMap2d:
     def __init__(self, filename=None):
         self._colormap_file = filename or COLORMAP_FILE
@@ -472,7 +480,7 @@ class Summ_writer(object):
             if norm:
                 # normalize before oned2inferno,
                 # so that the ranges are similar within B across S
-                im = utils.basic.normalize(im)
+                im = pips_utils.basic.normalize(im)
 
             im = im.view(B*S, C, H, W)
             vis = oned2inferno(im, norm=norm)
@@ -547,7 +555,7 @@ class Summ_writer(object):
                     feats = torch.mean(feats, dim=reduce_dim)
                 else: 
                     valids = valids.repeat(1, 1, feats.size()[2], 1, 1, 1)
-                    feats = utils.basic.reduce_masked_mean(feats, valids, dim=reduce_dim)
+                    feats = pips_utils.basic.reduce_masked_mean(feats, valids, dim=reduce_dim)
 
             B, S, C, D, W = list(feats.size())
 
@@ -559,8 +567,8 @@ class Summ_writer(object):
                 return self.summ_oneds(name=name, ims=feats, norm=True, only_return=only_return, frame_ids=frame_ids)
 
             else:
-                __p = lambda x: utils.basic.pack_seqdim(x, B)
-                __u = lambda x: utils.basic.unpack_seqdim(x, B)
+                __p = lambda x: pips_utils.basic.pack_seqdim(x, B)
+                __u = lambda x: pips_utils.basic.unpack_seqdim(x, B)
 
                 feats_  = __p(feats)
                 
@@ -590,7 +598,7 @@ class Summ_writer(object):
                     feat = torch.mean(feat, dim=reduce_axis)
                 else:
                     valid = valid.repeat(1, feat.size()[1], 1, 1, 1)
-                    feat = utils.basic.reduce_masked_mean(feat, valid, dim=reduce_axis)
+                    feat = pips_utils.basic.reduce_masked_mean(feat, valid, dim=reduce_axis)
                     
             B, C, D, W = list(feat.shape)
 

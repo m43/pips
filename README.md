@@ -94,20 +94,20 @@ To download our exact FlyingThings++ dataset, try [this link](https://drive.goog
 To create our FlyingThings++ dataset, first [download FlyingThings](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html). The data should look like:
 
 ```
-../flyingthings/optical_flow/
-../flyingthings/object_index/
-../flyingthings/frames_cleanpass_webp/
+data/flyingthings/optical_flow/
+data/flyingthings/object_index/
+data/flyingthings/frames_cleanpass_webp/
 ```
 
 Once you have the flows and masks, you can run `python make_trajs.py`. This will put 80G of trajectory data into:
 ```
-../flyingthings/trajs_ad/
+data/flyingthings/trajs_ad/
 ```
 
 In parallel, you can run `python make_occlusions.py`. This will put 537M of occlusion data into:
 
 ```
-../flyingthings/occluders_al
+data/flyingthings/occluders_al
 ```
 
 This data will be loaded and joined with corresponding rgb by the `FlyingThingsDataset` class in `flyingthingsdataset.py`, when training and testing.
@@ -133,11 +133,11 @@ First it should print some diagnostic information about the model and data. Then
 
 ```
 model_name 1_8_128_I6_3e-4_A_tb89_21:34:46
-loading FlyingThingsDataset [...] found 13085 samples in ../flyingthings (dset=TRAIN, subset=all, version=ad)
-loading occluders [...] found 7856 occluders in ../flyingthings (dset=TRAIN, subset=all, version=al)
+loading FlyingThingsDataset [...] found 13085 samples in data/flyingthings (dset=TRAIN, subset=all, version=ad)
+loading occluders [...] found 7856 occluders in data/flyingthings (dset=TRAIN, subset=all, version=al)
 not using augs in val
-loading FlyingThingsDataset [...] found 2542 samples in ../flyingthings (dset=TEST, subset=all, version=ad)
-loading occluders...found 1631 occluders in ../flyingthings (dset=TEST, subset=all, version=al)
+loading FlyingThingsDataset [...] found 2542 samples in data/flyingthings (dset=TEST, subset=all, version=ad)
+loading occluders...found 1631 occluders in data/flyingthings (dset=TEST, subset=all, version=al)
 warning: updated load_fails (on this worker): 1/13085...
 1_8_128_I6_3e-4_A_tb89_21:34:46; step 000001/100000; rtime 9.79; itime 20.24; loss = 40.30593
 1_8_128_I6_3e-4_A_tb89_21:34:46; step 000002/100000; rtime 0.01; itime 0.37; loss = 43.12448

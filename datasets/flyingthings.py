@@ -1,23 +1,16 @@
-import time
-from numpy import random
-from numpy.core.numeric import full
-import torch
-import numpy as np
-import os
-import scipy.ndimage
-import torchvision.transforms as transforms
-import torch.nn.functional as F
-from PIL import Image
-import random
-from torch._C import dtype, set_flush_denormal
-import utils.basic
-import utils.improc
 import glob
-import json
-import imageio
-import cv2
+import os
 import re
 import sys
+import time
+import warnings
+
+import cv2
+import imageio
+import numpy as np
+import torch
+from PIL import Image
+from numpy import random
 from torchvision.transforms import ColorJitter, GaussianBlur
 
 np.random.seed(125)
@@ -74,7 +67,7 @@ def readImage(name):
 
 class FlyingThingsDataset(torch.utils.data.Dataset):
     def __init__(self,
-                 dataset_location='../flyingthings',
+                 dataset_location='data/flyingthings',
                  dset='TRAIN',
                  subset='all',
                  use_augs=False,
@@ -431,26 +424,18 @@ class FlyingThingsDataset(torch.utils.data.Dataset):
             'valids': valids,
         }
         return sample, True
-    
-    def __getitem__(self, index):
-        gotit = False
-        fail_count = 0
-        
-        sample, gotit = self.getitem_helper(index)
-        if not gotit:
-            print('warning: sampling failed')
-            # fake sample, so we can still collate
-            sample = {
-                'rgbs': torch.zeros((self.S, 3, self.crop_size[0], self.crop_size[1])),
-                'occs': torch.zeros((self.S, 1, self.crop_size[0], self.crop_size[1])),
-                'masks': torch.zeros((self.S, 1, self.crop_size[0], self.crop_size[1])),
-                'trajs': torch.zeros((self.S, self.N, 2)),
-                'visibles': torch.zeros((self.S, self.N)),
-                'valids': torch.zeros((self.S, self.N)),
-            }
-            
-        return sample, gotit
-    
+
+    def __getitem__(self, index, n_trials=100):
+        for i in range(n_trials):
+            sample, gotit = self.getitem_helper(index)
+            if gotit:
+                return sample
+            else:
+                warnings.warn(f"Sampling failed for index {index}, trying again ({i + 1}/{n_trials})")
+                print()
+
+        raise RuntimeError(f"Failed {n_trials} times at getting item with index {index}")
+
     def add_occluders(self, rgbs, masks, trajs, visibles, valids, print_timings=False):
         '''
         Input:

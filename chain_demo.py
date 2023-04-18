@@ -1,16 +1,17 @@
 import time
+
+import argparse
 import numpy as np
-import io
 import os
 from PIL import Image
-import cv2
-import saverloader
+from pips_utils import saverloader
 import imageio.v2 as imageio
 from nets.pips import Pips
-import utils.improc
+import pips_utils.improc
 import random
 import glob
-from utils.basic import print_, print_stats
+
+from pips_utils.util import ensure_dir
 import torch
 from tensorboardX import SummaryWriter
 import torch.nn.functional as F
@@ -18,7 +19,7 @@ import torch.nn.functional as F
 random.seed(125)
 np.random.seed(125)
 
-def run_model(model, rgbs, N, sw):
+def run_model(model, rgbs, N, sw, output_gifs_path):
     rgbs = rgbs.cuda().float() # B, S, C, H, W
 
     B, S, C, H, W = rgbs.shape
@@ -86,7 +87,7 @@ def run_model(model, rgbs, N, sw):
     rgbs = F.pad(rgbs.reshape(B*S, 3, H, W), (pad, pad, pad, pad), 'constant', 0).reshape(B, S, 3, H+pad*2, W+pad*2)
     trajs_e = trajs_e + pad
 
-    prep_rgbs = utils.improc.preprocess_color(rgbs)
+    prep_rgbs = pips_utils.improc.preprocess_color(rgbs)
     gray_rgbs = torch.mean(prep_rgbs, dim=2, keepdim=True).repeat(1, 1, 3, 1, 1)
     
     if sw is not None and sw.save_this:
@@ -100,7 +101,7 @@ def run_model(model, rgbs, N, sw):
             kp_list = list(kp_vis.unbind(1))
             kp_list = [kp[0].permute(1,2,0).cpu().numpy() for kp in kp_list]
             kp_list = [Image.fromarray(kp) for kp in kp_list]
-            out_fn = './chain_out_%d.gif' % sw.global_step
+            out_fn = os.path.join(output_gifs_path, f'./chain__S{S}_H{H}_W{W}__step-{sw.global_step:03d}.gif')
             kp_list[0].save(out_fn, save_all=True, append_images=kp_list[1:])
             print('saved %s' % out_fn)
             
@@ -110,7 +111,7 @@ def run_model(model, rgbs, N, sw):
 
     return trajs_e-pad
     
-def main():
+def main(input_images_path, output_gifs_path):
 
     # the idea in this file is to chain together pips from a long sequence, and return some visualizations
     
@@ -123,13 +124,14 @@ def main():
     S = 50
     N = 1 # number of points to track
 
-    filenames = glob.glob('./demo_images/*.jpg')
+    filenames = glob.glob(os.path.join(input_images_path, '*.jpg'))
     filenames = sorted(filenames)
     print('filenames', filenames)
-    max_iters = len(filenames)//(S//2)-1 # run slightly overlapping subseqs
+    max_iters = len(filenames)//S # run each unique subsequence
+    assert len(filenames) > 0, "No images found"
 
-    log_freq = 1 # when to produce visualizations 
-    
+    log_freq = 1 # when to produce visualizations
+
     ## autogen a name
     model_name = "%02d_%d_%d" % (B, S, N)
     model_name += "_%s" % exp_name
@@ -137,7 +139,8 @@ def main():
     model_date = datetime.datetime.now().strftime('%H:%M:%S')
     model_name = model_name + '_' + model_date
     print('model_name', model_name)
-    
+
+    ensure_dir(output_gifs_path)
     log_dir = 'logs_chain_demo'
     writer_t = SummaryWriter(log_dir + '/' + model_name + '/t', max_queue=10, flush_secs=60)
 
@@ -156,7 +159,7 @@ def main():
         
         global_step += 1
 
-        sw_t = utils.improc.Summ_writer(
+        sw_t = pips_utils.improc.Summ_writer(
             writer=writer_t,
             global_step=global_step,
             log_freq=log_freq,
@@ -179,7 +182,7 @@ def main():
             iter_start_time = time.time()
 
             with torch.no_grad():
-                trajs_e = run_model(model, rgbs, N, sw_t)
+                trajs_e = run_model(model, rgbs, N, sw_t, output_gifs_path)
 
             iter_time = time.time()-iter_start_time
             print('%s; step %06d/%d; rtime %.2f; itime %.2f' % (
@@ -190,4 +193,10 @@ def main():
     writer_t.close()
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input_images_path", type=str, default="demo_images/black_french_bulldog",
+                        help="path to folder with input images")
+    parser.add_argument("--output_gifs_path", type=str, default="demo_output/black_french_bulldog",
+                        help="path to folder to save gifs to")
+    args = parser.parse_args()
+    main(args.input_images_path, args.output_gifs_path)

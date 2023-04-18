@@ -27,7 +27,6 @@ class Raftnet(nn.Module):
         self.model = torch.nn.DataParallel(RAFT(args))
         if ckpt_name is not None:
             self.model.load_state_dict(torch.load(ckpt_name))
-        # self.model.cuda()
 
     def forward(self, image1, image2, iters=20, test_mode=True):
         # input images are in [-0.5, 0.5]
@@ -38,11 +37,11 @@ class Raftnet(nn.Module):
         padder = InputPadder(image1.shape)
         image1, image2 = padder.pad(image1, image2)
         if test_mode:
-            flow_low, flow_up, feat = self.model(image1, image2, iters=iters, test_mode=test_mode)
+            flow_low, flow_up, feat = self.model(image1=image1, image2=image2, iters=iters, test_mode=test_mode)
             flow_up = padder.unpad(flow_up)
             return flow_up, feat
         else:
-            flow_predictions = self.model(image1, image2, iters=iters, test_mode=test_mode)
+            flow_predictions = self.model(image1=image1, image2=image2, iters=iters, test_mode=test_mode)
             return flow_predictions
     
         # print(flow_up.shape)
