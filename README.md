@@ -1,3 +1,5 @@
+TODO: Outdated, see `docs`.
+
 # Particle Video Revisited: Tracking Through Occlusions Using Point Trajectories
 
 This is the official code release for our ECCV2022 paper on tracking particles through occlusions, presenting our new "particle video" method, **Persistent Independent Particles (PIPs)**. 
